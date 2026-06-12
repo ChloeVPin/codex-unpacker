@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "updatedAt": "2026-06-12T23:55:00Z",
+  "package": {
+    "name": "OpenAI.Codex",
+    "version": "26.602.4764.0",
+    "packageMoniker": "OpenAI.Codex_26.602.4764.0_x64__2p2nqsd0c76g0",
+    "publisher": "CN=50BDFD77-8903-4850-9FFE-6E8522F64D5B",
+    "sha256": "cf9aa8d704a322efb9ee46cedc2b245b2d7bee517cacade2a635a09323d953ca",
+    "size": 566512593
+  },
+  "release": {
+    "tag": "codex-msix-26.602.4764.0-cf9aa8d704a3",
+    "id": null
+  }
+}

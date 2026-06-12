@@ -1,0 +1,19 @@
+*.msix
+*.appx
+*.msixbundle
+*.appxbundle
+*.appinstaller
+
+_mirror_release/
+artifacts/
+dist/
+temp/
+tmp/
+
+*.tmp
+*.log
+
+# Keep the tracked state file.
+!data/
+!data/latest.json
+
