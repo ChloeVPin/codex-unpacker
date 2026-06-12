@@ -764,7 +764,7 @@ func ghAuthed() bool {
 	if !commandExists("gh") {
 		return false
 	}
-	cmd := exec.Command("gh", "auth", "status", "github.com")
+	cmd := exec.Command("gh", "auth", "status")
 	return cmd.Run() == nil
 }
 

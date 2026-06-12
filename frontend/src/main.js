@@ -28,6 +28,7 @@ app.innerHTML = `
         <div>
           <p class="eyebrow">Codex Unpacked</p>
           <h1>Release mirror</h1>
+          <p class="version">Version 1.0.0</p>
         </div>
         <span id="statePill" class="pill">Checking</span>
       </header>

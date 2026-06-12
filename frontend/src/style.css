@@ -58,6 +58,13 @@ button {
   text-transform: uppercase;
 }
 
+.version {
+  margin-top: 7px;
+  color: #78858b;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 h1,
 h2,
 p {
