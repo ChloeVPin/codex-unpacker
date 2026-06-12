@@ -1,49 +1,62 @@
-# codex-unpacked
+# Codex Unpacked
 
-Private Windows-first release mirror for the Codex MSIX updater flow.
+Minimal Windows GUI for mirroring the Codex MSIX into GitHub Releases.
 
-This repo stores the automation, not the giant package itself. The release
-assets are the downloaded `.msix`, a SHA256 manifest, and a small
-`release.json` file that records the package version, source URL, hash, and
-timestamp.
+The repo stores the Wails/Go automation, not the large package payload. Releases carry the `.msix`, `SHA256SUMS.txt`, and `release.json`.
 
-## Layout
+## What It Does
 
-- `update-codex.bat` - thin launcher for Windows users
-- `tools/update-codex.ps1` - PowerShell engine
-- `data/latest.json` - local idempotence state
+- Checks the official Codex Windows update manifest.
+- Resolves the current MSIX from the validated mirror release source.
+- Validates the MSIX by reading `AppxManifest.xml` and requiring blockmap/signature metadata.
+- Computes SHA256 without loading the package into memory.
+- Publishes a GitHub Release with the MSIX, checksum file, and release manifest.
+- Updates `data/latest.json` so reruns are idempotent.
+- Supports local MSIX validation and manual publishing through the GUI.
 
-## Usage
+## Requirements
 
-Dry-run against the MSIX already in the workspace:
-
-```powershell
-.\update-codex.bat -DryRun -LocalMsixPath .\OpenAI.Codex_26.602.4764.0_x64__2p2nqsd0c76g0.Msix
-```
-
-Probe the live upstream feed without downloading the package:
-
-```powershell
-.\update-codex.bat -ProbeOnly
-```
-
-Run the full update and publish flow:
+- Windows 10/11
+- Go 1.23+
+- Wails v2
+- Node.js/npm
+- Git
+- GitHub CLI authenticated with release permission:
 
 ```powershell
-.\update-codex.bat
+gh auth login
 ```
 
-The script prefers `gh` for release publishing and can fall back to a PAT
-backed GitHub API flow when `GH_TOKEN` or `GITHUB_TOKEN` is present.
+## Run From Source
 
-For package resolution it tries the Microsoft Store path first and falls back
-to the public mirror release feed if the Store SOAP endpoint refuses the
-request.
+```powershell
+wails dev
+```
+
+## Build
+
+```powershell
+wails build
+```
+
+The executable is written to:
+
+```text
+build\bin\codex-unpacked.exe
+```
+
+## Release Flow
+
+1. Open the app.
+2. Confirm the repo and GitHub auth status show ready.
+3. Click `Probe` to check the latest package metadata.
+4. Click `Publish` to download, validate, hash, and create the GitHub Release.
+
+For manual testing, use `Choose` to select a local `.msix`, then `Dry run` or `Publish`.
 
 ## Notes
 
-- The repo stays lean; GitHub Releases carry the payload.
-- The updater validates `AppxManifest.xml`, `AppxBlockMap.xml`, and
-  `AppxSignature.p7x` as read-only inputs.
-- `AppxManifest.xml` is treated as the source of truth for the package
-  version.
+- Large packages are ignored by git history.
+- `AppxManifest.xml` is treated as the source of truth for package version.
+- Blockmap/signature files are validation inputs only.
+- The project should stay private until redistribution and signing implications are fully settled.
