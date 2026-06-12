@@ -2,7 +2,7 @@
   "name": "codex-unpacker",
   "version": "1.0.1",
   "private": false,
-  "description": "Desktop GUI and npx CLI for mirroring the latest Codex MSIX into GitHub Releases.",
+  "description": "Desktop GUI and npx CLI for downloading and verifying the latest Codex MSIX locally.",
   "type": "module",
   "bin": {
     "codex-unpacker": "./cli/codex-unpacker.mjs"

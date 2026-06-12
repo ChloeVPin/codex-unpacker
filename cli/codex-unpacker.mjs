@@ -15,7 +15,7 @@ const architecture = 'x64';
 const statePath = 'data/latest.json';
 const releaseTagPrefix = 'codex-msix';
 
-const commands = new Set(['status', 'probe', 'publish', 'local', 'help']);
+const commands = new Set(['status', 'probe', 'download', 'local', 'help']);
 
 main().catch((error) => {
   console.error(`\nerror: ${error.message || error}`);
@@ -44,8 +44,8 @@ async function main() {
     return;
   }
 
-  if (command === 'publish') {
-    const result = await publishLatest(Boolean(opts.force));
+  if (command === 'download') {
+    const result = await downloadLatest(opts.output);
     console.log(JSON.stringify(result, null, 2));
     return;
   }
@@ -53,11 +53,6 @@ async function main() {
   if (command === 'local') {
     const msixPath = opts._[0];
     if (!msixPath) throw new Error('local requires a path to a .msix file');
-    if (opts.publish) {
-      const result = await publishLocal(msixPath, Boolean(opts.force));
-      console.log(JSON.stringify(result, null, 2));
-      return;
-    }
     const result = await dryRunLocal(msixPath);
     console.log(JSON.stringify(result, null, 2));
   }
@@ -67,9 +62,11 @@ function parseFlags(args) {
   const opts = { _: [] };
   for (let i = 0; i < args.length; i += 1) {
     const arg = args[i];
-    if (arg === '--force') opts.force = true;
+    if (arg === '--output') {
+      opts.output = args[i + 1];
+      i += 1;
+    } else if (arg === '--force') opts.force = true;
     else if (arg === '--json') opts.json = true;
-    else if (arg === '--publish') opts.publish = true;
     else if (arg === '--dry-run') opts.dryRun = true;
     else opts._.push(arg);
   }
@@ -82,23 +79,16 @@ function printHelp() {
 Usage:
   npx github:ChloeVPin/codex-unpacker status
   npx github:ChloeVPin/codex-unpacker probe
-  npx github:ChloeVPin/codex-unpacker publish [--force]
+  npx github:ChloeVPin/codex-unpacker download [--output <path>]
   npx github:ChloeVPin/codex-unpacker local <path.msix> [--dry-run]
-  npx github:ChloeVPin/codex-unpacker local <path.msix> --publish [--force]
-
-Requires GitHub CLI auth for publishing:
-  gh auth login
+ 
+The download command saves the latest Codex MSIX to a local path and does not publish anything.
 `);
 }
 
 async function getStatus() {
   const state = await readState().catch(() => null);
-  const repo = repoInfo();
   return {
-    repo: repo.name,
-    repoPrivate: repo.isPrivate,
-    ghAvailable: commandExists('gh'),
-    ghAuthed: ghAuthed(),
     stateVersion: state?.package?.version || '',
     stateHash: state?.package?.sha256 || '',
     workingFolder: process.cwd(),
@@ -175,12 +165,55 @@ async function publishLatest(force) {
   }
 }
 
+async function downloadLatest(outputPath) {
+  const source = await resolveLatest();
+  const defaultName = `${source.packageMoniker}.Msix`;
+  let target = outputPath ? resolve(outputPath) : join(process.cwd(), defaultName);
+  try {
+    const stat = await fs.stat(target);
+    if (stat.isDirectory()) {
+      target = join(target, defaultName);
+    }
+  } catch {}
+
+  await fs.mkdir(dirname(target), { recursive: true });
+  console.log(`downloading ${source.packageMoniker}`);
+  await downloadFile(source.downloadUrl, target);
+  const info = await inspectMsix(target, source.packageVersion);
+  if (source.expectedSha256 && !sameHash(info.sha256, source.expectedSha256)) {
+    throw new Error(`downloaded package hash mismatch: expected ${source.expectedSha256}, got ${info.sha256}`);
+  }
+  await writeJson(statePath, {
+    schemaVersion: 1,
+    updatedAt: new Date().toISOString(),
+    package: {
+      name: info.name,
+      version: info.version,
+      packageMoniker: source.packageMoniker,
+      packageFamilyName: info.packageFamilyName,
+      publisher: info.publisher,
+      sha256: info.sha256,
+      size: info.size,
+      fileName: info.fileName,
+      sourceKind: source.sourceKind,
+    },
+    source,
+  });
+  return {
+    mode: 'Downloaded',
+    version: info.version,
+    sha256: info.sha256,
+    path: target,
+    message: 'Saved to selected location.',
+  };
+}
+
 async function dryRunLocal(msixPath) {
   const info = await inspectMsix(msixPath, '');
   const state = await readState().catch(() => null);
   const same = state?.package?.version === info.version && sameHash(state?.package?.sha256, info.sha256);
   return {
-    mode: same ? 'No update' : 'Would publish',
+    mode: same ? 'No update' : 'Would download',
     version: info.version,
     sha256: info.sha256,
     message: same ? 'Package matches data/latest.json.' : 'Package is different from data/latest.json.',

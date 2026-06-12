@@ -39,10 +39,6 @@ type App struct {
 }
 
 type AppStatus struct {
-	Repo          string `json:"repo"`
-	RepoPrivate   bool   `json:"repoPrivate"`
-	GhAvailable   bool   `json:"ghAvailable"`
-	GhAuthed      bool   `json:"ghAuthed"`
 	StateVersion  string `json:"stateVersion"`
 	StateHash     string `json:"stateHash"`
 	WorkingFolder string `json:"workingFolder"`
@@ -61,6 +57,14 @@ type ProbeResult struct {
 	WouldUpdate           bool   `json:"wouldUpdate"`
 	CurrentStateVersion   string `json:"currentStateVersion"`
 	CurrentStateSHA256    string `json:"currentStateSha256"`
+}
+
+type DownloadResult struct {
+	Mode    string `json:"mode"`
+	Version string `json:"version"`
+	SHA256  string `json:"sha256"`
+	Path    string `json:"path"`
+	Message string `json:"message"`
 }
 
 type PublishResult struct {
@@ -126,7 +130,7 @@ type latestState struct {
 	UpdatedAt     string    `json:"updatedAt"`
 	Package       statePack `json:"package"`
 	Source        any       `json:"source,omitempty"`
-	Release       stateRel  `json:"release"`
+	Release       stateRel  `json:"release,omitempty"`
 }
 
 type statePack struct {
@@ -167,13 +171,8 @@ func (a *App) startup(ctx context.Context) {
 func (a *App) GetStatus() (AppStatus, error) {
 	wd, _ := os.Getwd()
 	state, _ := readState()
-	repo, private := repoInfo()
 
 	return AppStatus{
-		Repo:          repo,
-		RepoPrivate:   private,
-		GhAvailable:   commandExists("gh"),
-		GhAuthed:      ghAuthed(),
 		StateVersion:  state.Package.Version,
 		StateHash:     state.Package.SHA256,
 		WorkingFolder: wd,
@@ -223,69 +222,71 @@ func (a *App) ChooseLocalMSIX() (PackageInfo, error) {
 	return inspectMSIX(path, "")
 }
 
-func (a *App) DryRunLocal(path string) (PublishResult, error) {
+func (a *App) DryRunLocal(path string) (DownloadResult, error) {
 	info, err := inspectMSIX(path, "")
 	if err != nil {
-		return PublishResult{}, err
+		return DownloadResult{}, err
 	}
 	state, _ := readState()
-	mode := "Would publish"
+	mode := "Would download"
 	msg := "Package is different from data/latest.json."
 	if state.Package.Version == info.Version && strings.EqualFold(state.Package.SHA256, info.SHA256) {
 		mode = "No update"
 		msg = "Package matches data/latest.json."
 	}
-	return PublishResult{Mode: mode, Version: info.Version, SHA256: info.SHA256, Message: msg}, nil
+	return DownloadResult{Mode: mode, Version: info.Version, SHA256: info.SHA256, Message: msg}, nil
 }
 
-func (a *App) PublishLatest(force bool) (PublishResult, error) {
+func (a *App) DownloadLatest() (DownloadResult, error) {
 	source, err := a.resolveLatest()
 	if err != nil {
-		return PublishResult{}, err
+		return DownloadResult{}, err
 	}
-	state, _ := readState()
-	if !force && state.Package.Version == source.PackageVersion && strings.EqualFold(state.Package.SHA256, source.ExpectedSHA256) {
-		return PublishResult{Mode: "No update", Version: state.Package.Version, SHA256: state.Package.SHA256, Message: "Latest package already matches data/latest.json."}, nil
-	}
-
-	tmp, err := os.MkdirTemp("", "codex-unpacker-*")
+	defaultName := source.PackageMoniker + ".Msix"
+	path, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
+		Title:           "Save Codex MSIX",
+		DefaultFilename: defaultName,
+		Filters: []runtime.FileFilter{
+			{DisplayName: "MSIX packages", Pattern: "*.msix;*.appx"},
+		},
+	})
 	if err != nil {
-		return PublishResult{}, err
+		return DownloadResult{}, err
 	}
-	defer os.RemoveAll(tmp)
-
-	target := filepath.Join(tmp, source.PackageMoniker+".Msix")
+	if path == "" {
+		return DownloadResult{Mode: "Cancelled", Version: source.PackageVersion, SHA256: source.ExpectedSHA256, Message: "Download cancelled."}, nil
+	}
 	a.log("Downloading " + source.PackageMoniker)
-	if err := a.downloadFile(source.DownloadURL, target); err != nil {
-		return PublishResult{}, err
+	if err := a.downloadFile(source.DownloadURL, path); err != nil {
+		return DownloadResult{}, err
 	}
-	info, err := inspectMSIX(target, source.PackageVersion)
+	info, err := inspectMSIX(path, source.PackageVersion)
 	if err != nil {
-		return PublishResult{}, err
+		return DownloadResult{}, err
 	}
 	if source.ExpectedSHA256 != "" && !strings.EqualFold(info.SHA256, source.ExpectedSHA256) {
-		return PublishResult{}, fmt.Errorf("downloaded package hash mismatch: expected %s, got %s", source.ExpectedSHA256, info.SHA256)
+		return DownloadResult{}, fmt.Errorf("downloaded package hash mismatch: expected %s, got %s", source.ExpectedSHA256, info.SHA256)
 	}
-	return a.publishPackage(info, source, force)
-}
-
-func (a *App) PublishLocal(path string, force bool) (PublishResult, error) {
-	info, err := inspectMSIX(path, "")
-	if err != nil {
-		return PublishResult{}, err
+	if err := writeJSON(statePath, latestState{
+		SchemaVersion: 1,
+		UpdatedAt:     time.Now().UTC().Format(time.RFC3339),
+		Package: statePack{
+			Name:              info.Name,
+			Version:           info.Version,
+			PackageMoniker:    source.PackageMoniker,
+			PackageFamilyName: info.PackageFamilyName,
+			Publisher:         info.Publisher,
+			SHA256:            info.SHA256,
+			Size:              info.Size,
+			FileName:          info.FileName,
+			SourceKind:        source.SourceKind,
+		},
+		Source: source,
+	}); err != nil {
+		return DownloadResult{}, err
 	}
-	source := resolvedSource{
-		SourceKind:            "LocalMsix",
-		PackageVersion:        info.Version,
-		PackageMoniker:        info.PackageMoniker,
-		DownloadURL:           "local:" + info.FileName,
-		UpdateManifestVersion: info.Version,
-	}
-	state, _ := readState()
-	if !force && state.Package.Version == info.Version && strings.EqualFold(state.Package.SHA256, info.SHA256) {
-		return PublishResult{Mode: "No update", Version: info.Version, SHA256: info.SHA256, Message: "Local package already matches data/latest.json."}, nil
-	}
-	return a.publishPackage(info, source, force)
+	a.log("Saved to " + path)
+	return DownloadResult{Mode: "Downloaded", Version: info.Version, SHA256: info.SHA256, Path: path, Message: "Saved to selected location."}, nil
 }
 
 type resolvedSource struct {

@@ -1,16 +1,26 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-06-12T23:55:00Z",
+  "updatedAt": "2026-06-12T23:08:46.063Z",
   "package": {
     "name": "OpenAI.Codex",
-    "version": "26.602.4764.0",
-    "packageMoniker": "OpenAI.Codex_26.602.4764.0_x64__2p2nqsd0c76g0",
+    "version": "26.608.1337.0",
+    "packageMoniker": "OpenAI.Codex_26.608.1337.0_x64__2p2nqsd0c76g0",
+    "packageFamilyName": "OpenAI.Codex_2p2nqsd0c76g0",
     "publisher": "CN=50BDFD77-8903-4850-9FFE-6E8522F64D5B",
-    "sha256": "cf9aa8d704a322efb9ee46cedc2b245b2d7bee517cacade2a635a09323d953ca",
-    "size": 566512593
+    "sha256": "3c6df71fb91064c4adb34aa89d9ad2c77a070071c2f243580967b86c9f8b48e9",
+    "size": 581903506,
+    "fileName": "codex-latest.msix",
+    "sourceKind": "MirrorRelease"
   },
-  "release": {
-    "tag": "codex-msix-26.602.4764.0-cf9aa8d704a3",
-    "id": null
+  "source": {
+    "sourceKind": "MirrorRelease",
+    "updateManifestVersion": "26.608.1337.0",
+    "packageVersion": "26.608.1337.0",
+    "packageMoniker": "OpenAI.Codex_26.608.1337.0_x64__2p2nqsd0c76g0",
+    "downloadUrl": "https://github.com/Wangnov/codex-app-mirror/releases/download/codex-app-force-20260611-093001/OpenAI.Codex_26.608.1337.0_x64__2p2nqsd0c76g0.Msix",
+    "expectedSha256": "3c6df71fb91064c4adb34aa89d9ad2c77a070071c2f243580967b86c9f8b48e9",
+    "mirrorReleaseTag": "codex-app-force-20260611-093001",
+    "mirrorReleaseUrl": "https://github.com/Wangnov/codex-app-mirror/releases/tag/codex-app-force-20260611-093001",
+    "directStoreStatus": "Official manifest is checked; package bytes are resolved from the validated mirror release source."
   }
 }

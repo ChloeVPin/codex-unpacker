@@ -4,12 +4,10 @@ import {main} from '../models';
 
 export function ChooseLocalMSIX():Promise<main.PackageInfo>;
 
-export function DryRunLocal(arg1:string):Promise<main.PublishResult>;
+export function DownloadLatest():Promise<main.DownloadResult>;
+
+export function DryRunLocal(arg1:string):Promise<main.DownloadResult>;
 
 export function GetStatus():Promise<main.AppStatus>;
 
 export function ProbeLatest():Promise<main.ProbeResult>;
-
-export function PublishLatest(arg1:boolean):Promise<main.PublishResult>;
-
-export function PublishLocal(arg1:string,arg2:boolean):Promise<main.PublishResult>;

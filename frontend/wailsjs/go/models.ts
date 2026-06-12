@@ -1,10 +1,6 @@
 export namespace main {
 	
 	export class AppStatus {
-	    repo: string;
-	    repoPrivate: boolean;
-	    ghAvailable: boolean;
-	    ghAuthed: boolean;
 	    stateVersion: string;
 	    stateHash: string;
 	    workingFolder: string;
@@ -15,13 +11,29 @@ export namespace main {
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.repo = source["repo"];
-	        this.repoPrivate = source["repoPrivate"];
-	        this.ghAvailable = source["ghAvailable"];
-	        this.ghAuthed = source["ghAuthed"];
 	        this.stateVersion = source["stateVersion"];
 	        this.stateHash = source["stateHash"];
 	        this.workingFolder = source["workingFolder"];
+	    }
+	}
+	export class DownloadResult {
+	    mode: string;
+	    version: string;
+	    sha256: string;
+	    path: string;
+	    message: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new DownloadResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.mode = source["mode"];
+	        this.version = source["version"];
+	        this.sha256 = source["sha256"];
+	        this.path = source["path"];
+	        this.message = source["message"];
 	    }
 	}
 	export class PackageInfo {
@@ -86,28 +98,6 @@ export namespace main {
 	        this.wouldUpdate = source["wouldUpdate"];
 	        this.currentStateVersion = source["currentStateVersion"];
 	        this.currentStateSha256 = source["currentStateSha256"];
-	    }
-	}
-	export class PublishResult {
-	    mode: string;
-	    version: string;
-	    sha256: string;
-	    releaseTag: string;
-	    releaseUrl: string;
-	    message: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new PublishResult(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.mode = source["mode"];
-	        this.version = source["version"];
-	        this.sha256 = source["sha256"];
-	        this.releaseTag = source["releaseTag"];
-	        this.releaseUrl = source["releaseUrl"];
-	        this.message = source["message"];
 	    }
 	}
 

@@ -6,6 +6,10 @@ export function ChooseLocalMSIX() {
   return window['go']['main']['App']['ChooseLocalMSIX']();
 }
 
+export function DownloadLatest() {
+  return window['go']['main']['App']['DownloadLatest']();
+}
+
 export function DryRunLocal(arg1) {
   return window['go']['main']['App']['DryRunLocal'](arg1);
 }
@@ -16,12 +20,4 @@ export function GetStatus() {
 
 export function ProbeLatest() {
   return window['go']['main']['App']['ProbeLatest']();
-}
-
-export function PublishLatest(arg1) {
-  return window['go']['main']['App']['PublishLatest'](arg1);
-}
-
-export function PublishLocal(arg1, arg2) {
-  return window['go']['main']['App']['PublishLocal'](arg1, arg2);
 }

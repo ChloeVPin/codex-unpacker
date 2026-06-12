@@ -1,41 +1,29 @@
 # Codex Unpacker
 
-Minimal Windows GUI and `npx` CLI for mirroring the latest Codex MSIX into GitHub Releases.
+Small Windows app and CLI for downloading the latest Codex MSIX locally.
 
-The repo stores the Wails/Go automation, not the large package payload. Releases carry the `.msix`, `SHA256SUMS.txt`, and `release.json`.
+It checks the current upstream package, saves it to a path you choose, and can inspect a Codex MSIX already on disk. It does not push anything to GitHub releases.
 
 ## Quick Start
 
-Most users should download the prebuilt Windows executable from the latest GitHub Release:
-
-```text
-codex-unpacker.exe
-```
-
-Developers can still build from source, and automation users can run the CLI through `npx`.
+The no-build path is the CLI through `npx`. If you want the desktop app, build it with Wails.
 
 ## What It Does
 
-- Checks the official Codex Windows update manifest.
-- Resolves the current MSIX from the validated mirror release source.
-- Validates the MSIX by reading `AppxManifest.xml` and requiring blockmap/signature metadata.
-- Computes SHA256 without loading the package into memory.
-- Publishes a GitHub Release with the MSIX, checksum file, and release manifest.
-- Updates `data/latest.json` so reruns are idempotent.
-- Supports local MSIX validation and manual publishing through the GUI.
-- Provides an `npx` CLI for status, probe, publish, and local MSIX dry runs.
+- Probes the current Codex Windows package metadata.
+- Downloads the latest MSIX to a local path you choose.
+- Verifies `AppxManifest.xml`, `AppxBlockMap.xml`, `AppxSignature.p7x`, and `AppxMetadata/CodeIntegrity.cat`.
+- Computes SHA256 for the downloaded package.
+- Inspects a local MSIX file without downloading anything.
+- Records the last saved package in `data/latest.json`.
+- Never publishes packages to GitHub.
 
 ## Requirements
 
-For the prebuilt app:
+For the GUI:
 
 - Windows 10/11
-- Git
-- GitHub CLI authenticated with release permission:
-
-```powershell
-gh auth login
-```
+- A downloaded `codex-unpacker.exe`
 
 For source builds:
 
@@ -44,40 +32,27 @@ For source builds:
 - Wails v2
 - Node.js/npm
 - Git
-- GitHub CLI
 
 For `npx` usage:
 
 - Node.js 18+
 - Git
-- GitHub CLI
 
 ## Use The GUI
 
-1. Download `codex-unpacker.exe` from the latest release.
-2. Run it from a clone of this repo so it can read and update `data/latest.json`.
-3. Confirm the repo and GitHub auth status show ready.
-4. Click `Probe` to check the latest package metadata.
-5. Click `Publish` to download, validate, hash, and create the GitHub Release.
-
-For manual testing, use `Choose` to select a local `.msix`, then `Dry run` or `Publish`.
+1. Build the GUI with `wails build`.
+2. Launch `build\bin\codex-unpacker.exe`.
+3. Click `Probe` to check the current upstream package.
+4. Click `Download` and choose a save location.
+5. Use `Choose` and `Dry run` to inspect a local `.msix`.
 
 ## Use The CLI With npx
-
-Run directly from GitHub:
 
 ```powershell
 npx github:ChloeVPin/codex-unpacker status
 npx github:ChloeVPin/codex-unpacker probe
-npx github:ChloeVPin/codex-unpacker publish
+npx github:ChloeVPin/codex-unpacker download --output .\Downloads\OpenAI.Codex_26.602.4764.0_x64__2p2nqsd0c76g0.Msix
 npx github:ChloeVPin/codex-unpacker local .\OpenAI.Codex_26.602.4764.0_x64__2p2nqsd0c76g0.Msix --dry-run
-npx github:ChloeVPin/codex-unpacker local .\OpenAI.Codex_26.602.4764.0_x64__2p2nqsd0c76g0.Msix --publish
-```
-
-The package is also ready to publish to npm later, which would allow:
-
-```powershell
-npx codex-unpacker probe
 ```
 
 ## Build From Source
@@ -98,7 +73,6 @@ build\bin\codex-unpacker.exe
 
 ## Notes
 
-- Large packages are ignored by git history.
-- `AppxManifest.xml` is treated as the source of truth for package version.
-- Blockmap/signature files are validation inputs only.
-- The project should stay private until redistribution and signing implications are fully settled.
+- The tool is intentionally narrow: download, verify, and inspect.
+- `data/latest.json` is just local state for the last saved package.
+- Nothing in the app pushes packages to GitHub.

@@ -5,8 +5,7 @@ import {
   DryRunLocal,
   GetStatus,
   ProbeLatest,
-  PublishLatest,
-  PublishLocal,
+  DownloadLatest,
 } from '../wailsjs/go/main/App';
 import { EventsOn } from '../wailsjs/runtime/runtime';
 
@@ -27,8 +26,8 @@ app.innerHTML = `
       <header class="topbar">
         <div>
           <p class="eyebrow">Codex Unpacker</p>
-          <h1>Mirror the latest Codex MSIX</h1>
-          <p class="lede">Download, validate, and publish the current release into GitHub from a small desktop tool or the CLI.</p>
+          <h1>Download the latest Codex MSIX</h1>
+          <p class="lede">Save the current package locally, or inspect a Codex MSIX already on disk.</p>
           <p class="version">Version 1.0.1</p>
         </div>
         <span id="statePill" class="pill">Checking</span>
@@ -36,39 +35,38 @@ app.innerHTML = `
 
       <div class="grid">
         <div class="metric">
-          <span>Repo</span>
-          <strong id="repoValue">-</strong>
+          <span>Saved</span>
+          <strong id="savedValue">-</strong>
         </div>
         <div class="metric">
-          <span>State</span>
-          <strong id="stateValue">-</strong>
+          <span>Latest</span>
+          <strong id="latestValue">-</strong>
         </div>
         <div class="metric">
-          <span>Auth</span>
-          <strong id="authValue">-</strong>
+          <span>Folder</span>
+          <strong id="folderValue">-</strong>
         </div>
       </div>
 
       <div class="section">
         <div>
-          <h2>Latest upstream</h2>
-          <p id="probeText" class="muted">Probe the current Windows package source.</p>
+          <h2>Latest package</h2>
+          <p id="probeText" class="muted">Check the current Windows package source, then save it locally.</p>
         </div>
         <div class="actions">
           <button id="probeBtn" class="button secondary">Probe</button>
-          <button id="publishLatestBtn" class="button primary">Publish</button>
+          <button id="downloadBtn" class="button primary">Download</button>
         </div>
       </div>
 
       <div class="section">
         <div>
-          <h2>Local MSIX</h2>
-          <p id="localText" class="muted">Choose a package for dry-run validation or manual publishing.</p>
+          <h2>Inspect local MSIX</h2>
+          <p id="localText" class="muted">Choose a package that is already on your machine and check it against the recorded state.</p>
         </div>
         <div class="actions">
           <button id="pickBtn" class="button secondary">Choose</button>
           <button id="dryRunBtn" class="button secondary" disabled>Dry run</button>
-          <button id="publishLocalBtn" class="button primary" disabled>Publish</button>
         </div>
       </div>
 
@@ -87,18 +85,17 @@ app.innerHTML = `
 
 const refs = {
   statePill: document.querySelector('#statePill'),
-  repoValue: document.querySelector('#repoValue'),
-  stateValue: document.querySelector('#stateValue'),
-  authValue: document.querySelector('#authValue'),
+  savedValue: document.querySelector('#savedValue'),
+  latestValue: document.querySelector('#latestValue'),
+  folderValue: document.querySelector('#folderValue'),
   probeText: document.querySelector('#probeText'),
   localText: document.querySelector('#localText'),
   resultBox: document.querySelector('#resultBox'),
   logBox: document.querySelector('#logBox'),
   probeBtn: document.querySelector('#probeBtn'),
-  publishLatestBtn: document.querySelector('#publishLatestBtn'),
+  downloadBtn: document.querySelector('#downloadBtn'),
   pickBtn: document.querySelector('#pickBtn'),
   dryRunBtn: document.querySelector('#dryRunBtn'),
-  publishLocalBtn: document.querySelector('#publishLocalBtn'),
   clearBtn: document.querySelector('#clearBtn'),
 };
 
@@ -107,13 +104,18 @@ EventsOn('log', (message) => addLog(message));
 refs.probeBtn.addEventListener('click', () => runTask('Probe latest', async () => {
   state.probe = await ProbeLatest();
   state.result = {
-    title: state.probe.wouldUpdate ? 'Update available' : 'No update',
+    title: state.probe.wouldUpdate ? 'Download available' : 'Already saved',
     detail: `${state.probe.packageVersion || '-'} via ${state.probe.sourceKind}`,
   };
 }));
 
-refs.publishLatestBtn.addEventListener('click', () => runTask('Publish latest', async () => {
-  state.result = await PublishLatest(false);
+refs.downloadBtn.addEventListener('click', () => runTask('Download latest', async () => {
+  const result = await DownloadLatest();
+  state.result = {
+    ...result,
+    title: result.mode || 'Downloaded',
+    detail: result.path ? `Saved to ${result.path}` : result.message,
+  };
   await refreshStatus();
 }));
 
@@ -130,11 +132,6 @@ refs.pickBtn.addEventListener('click', () => runTask('Choose local package', asy
 
 refs.dryRunBtn.addEventListener('click', () => runTask('Dry run local package', async () => {
   state.result = await DryRunLocal(state.local.path);
-}));
-
-refs.publishLocalBtn.addEventListener('click', () => runTask('Publish local package', async () => {
-  state.result = await PublishLocal(state.local.path, false);
-  await refreshStatus();
 }));
 
 refs.clearBtn.addEventListener('click', () => {
@@ -175,15 +172,15 @@ function addLog(message) {
 
 function render() {
   const status = state.status;
-  refs.statePill.textContent = state.busy ? 'Working' : status?.ghAuthed ? 'Ready' : 'Needs auth';
-  refs.statePill.className = `pill ${state.busy ? 'working' : status?.ghAuthed ? 'ready' : 'warn'}`;
+  refs.statePill.textContent = state.busy ? 'Working' : status ? 'Ready' : 'Checking';
+  refs.statePill.className = `pill ${state.busy ? 'working' : status ? 'ready' : 'warn'}`;
 
-  refs.repoValue.textContent = status?.repo || 'Not linked';
-  refs.stateValue.textContent = status?.stateVersion ? `${status.stateVersion} (${status.stateHash.slice(0, 8)})` : 'Empty';
-  refs.authValue.textContent = status?.ghAuthed ? 'GitHub CLI' : status?.ghAvailable ? 'Sign in' : 'Missing gh';
+  refs.savedValue.textContent = status?.stateVersion ? `${status.stateVersion} (${status.stateHash.slice(0, 8)})` : 'None';
+  refs.latestValue.textContent = state.probe?.packageVersion ? `${state.probe.packageVersion}${state.probe.wouldUpdate ? ' new' : ''}` : 'Not checked';
+  refs.folderValue.textContent = status?.workingFolder || 'Unknown';
 
   if (state.probe) {
-    const marker = state.probe.wouldUpdate ? 'New' : 'Current';
+    const marker = state.probe.wouldUpdate ? 'New download' : 'Current package';
     refs.probeText.textContent = `${marker}: ${state.probe.packageVersion} from ${state.probe.sourceKind}`;
   }
 
@@ -192,10 +189,9 @@ function render() {
   }
 
   refs.probeBtn.disabled = state.busy;
-  refs.publishLatestBtn.disabled = state.busy || !status?.ghAuthed;
+  refs.downloadBtn.disabled = state.busy;
   refs.pickBtn.disabled = state.busy;
   refs.dryRunBtn.disabled = state.busy || !state.local?.path;
-  refs.publishLocalBtn.disabled = state.busy || !state.local?.path || !status?.ghAuthed;
 
   if (state.result) {
     refs.resultBox.className = `resultBox ${state.result.error ? 'error' : ''}`;
