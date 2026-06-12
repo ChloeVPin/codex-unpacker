@@ -15,7 +15,7 @@ func main() {
 	app := NewApp()
 
 	err := wails.Run(&options.App{
-		Title:     "Codex Unpacked",
+		Title:     "Codex Unpacker",
 		Width:     760,
 		Height:    620,
 		MinWidth:  680,

@@ -1,11 +1,11 @@
 {
-  "name": "codex-unpacked",
-  "version": "1.0.0",
+  "name": "codex-unpacker",
+  "version": "1.0.1",
   "private": false,
-  "description": "Minimal GUI and npx CLI for mirroring Codex MSIX releases.",
+  "description": "Desktop GUI and npx CLI for mirroring the latest Codex MSIX into GitHub Releases.",
   "type": "module",
   "bin": {
-    "codex-unpacked": "./cli/codex-unpacked.mjs"
+    "codex-unpacker": "./cli/codex-unpacker.mjs"
   },
   "files": [
     "cli/",
@@ -15,9 +15,9 @@
     "node": ">=18"
   },
   "scripts": {
-    "cli": "node ./cli/codex-unpacked.mjs",
+    "cli": "node ./cli/codex-unpacker.mjs",
     "build:app": "wails build",
-    "test:cli": "node ./cli/codex-unpacked.mjs status && node ./cli/codex-unpacked.mjs local --dry-run ./OpenAI.Codex_26.602.4764.0_x64__2p2nqsd0c76g0.Msix"
+    "test:cli": "node ./cli/codex-unpacker.mjs status && node ./cli/codex-unpacker.mjs local --dry-run ./OpenAI.Codex_26.602.4764.0_x64__2p2nqsd0c76g0.Msix"
   },
   "license": "UNLICENSED"
 }

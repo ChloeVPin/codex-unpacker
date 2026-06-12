@@ -26,9 +26,10 @@ app.innerHTML = `
     <section class="panel">
       <header class="topbar">
         <div>
-          <p class="eyebrow">Codex Unpacked</p>
-          <h1>Release mirror</h1>
-          <p class="version">Version 1.0.0</p>
+          <p class="eyebrow">Codex Unpacker</p>
+          <h1>Mirror the latest Codex MSIX</h1>
+          <p class="lede">Download, validate, and publish the current release into GitHub from a small desktop tool or the CLI.</p>
+          <p class="version">Version 1.0.1</p>
         </div>
         <span id="statePill" class="pill">Checking</span>
       </header>

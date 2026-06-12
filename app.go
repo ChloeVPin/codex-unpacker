@@ -30,7 +30,7 @@ const (
 	packageFamilySuffix      = "2p2nqsd0c76g0"
 	architecture             = "x64"
 	statePath                = "data/latest.json"
-	releaseTagPrefix         = "codex-msix"
+	releaseTagPrefix         = "codex-unpacker"
 )
 
 type App struct {
@@ -248,7 +248,7 @@ func (a *App) PublishLatest(force bool) (PublishResult, error) {
 		return PublishResult{Mode: "No update", Version: state.Package.Version, SHA256: state.Package.SHA256, Message: "Latest package already matches data/latest.json."}, nil
 	}
 
-	tmp, err := os.MkdirTemp("", "codex-unpacked-*")
+	tmp, err := os.MkdirTemp("", "codex-unpacker-*")
 	if err != nil {
 		return PublishResult{}, err
 	}
@@ -550,7 +550,7 @@ func (a *App) getBytes(url string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", "codex-unpacked/1.0")
+	req.Header.Set("User-Agent", "codex-unpacker/1.0")
 	req.Header.Set("Accept", "application/vnd.github+json, application/json, */*")
 	resp, err := a.client.Do(req)
 	if err != nil {
@@ -569,7 +569,7 @@ func (a *App) downloadFile(url, path string) error {
 	if err != nil {
 		return err
 	}
-	req.Header.Set("User-Agent", "codex-unpacked/1.0")
+	req.Header.Set("User-Agent", "codex-unpacker/1.0")
 	resp, err := a.client.Do(req)
 	if err != nil {
 		return err

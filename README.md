@@ -1,6 +1,6 @@
-# Codex Unpacked
+# Codex Unpacker
 
-Minimal Windows GUI and `npx` CLI for mirroring the Codex MSIX into GitHub Releases.
+Minimal Windows GUI and `npx` CLI for mirroring the latest Codex MSIX into GitHub Releases.
 
 The repo stores the Wails/Go automation, not the large package payload. Releases carry the `.msix`, `SHA256SUMS.txt`, and `release.json`.
 
@@ -9,7 +9,7 @@ The repo stores the Wails/Go automation, not the large package payload. Releases
 Most users should download the prebuilt Windows executable from the latest GitHub Release:
 
 ```text
-codex-unpacked.exe
+codex-unpacker.exe
 ```
 
 Developers can still build from source, and automation users can run the CLI through `npx`.
@@ -54,7 +54,7 @@ For `npx` usage:
 
 ## Use The GUI
 
-1. Download `codex-unpacked.exe` from the latest release.
+1. Download `codex-unpacker.exe` from the latest release.
 2. Run it from a clone of this repo so it can read and update `data/latest.json`.
 3. Confirm the repo and GitHub auth status show ready.
 4. Click `Probe` to check the latest package metadata.
@@ -67,17 +67,17 @@ For manual testing, use `Choose` to select a local `.msix`, then `Dry run` or `P
 Run directly from GitHub:
 
 ```powershell
-npx github:ChloeVPin/codex-unpacked status
-npx github:ChloeVPin/codex-unpacked probe
-npx github:ChloeVPin/codex-unpacked publish
-npx github:ChloeVPin/codex-unpacked local .\OpenAI.Codex_26.602.4764.0_x64__2p2nqsd0c76g0.Msix --dry-run
-npx github:ChloeVPin/codex-unpacked local .\OpenAI.Codex_26.602.4764.0_x64__2p2nqsd0c76g0.Msix --publish
+npx github:ChloeVPin/codex-unpacker status
+npx github:ChloeVPin/codex-unpacker probe
+npx github:ChloeVPin/codex-unpacker publish
+npx github:ChloeVPin/codex-unpacker local .\OpenAI.Codex_26.602.4764.0_x64__2p2nqsd0c76g0.Msix --dry-run
+npx github:ChloeVPin/codex-unpacker local .\OpenAI.Codex_26.602.4764.0_x64__2p2nqsd0c76g0.Msix --publish
 ```
 
 The package is also ready to publish to npm later, which would allow:
 
 ```powershell
-npx codex-unpacked probe
+npx codex-unpacker probe
 ```
 
 ## Build From Source
@@ -93,7 +93,7 @@ wails build
 The executable is written to:
 
 ```text
-build\bin\codex-unpacked.exe
+build\bin\codex-unpacker.exe
 ```
 
 ## Notes

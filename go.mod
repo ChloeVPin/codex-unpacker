@@ -1,4 +1,4 @@
-module codex-unpacked
+module codex-unpacker
 
 go 1.23.0
 

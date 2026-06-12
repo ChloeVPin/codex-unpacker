@@ -77,14 +77,14 @@ function parseFlags(args) {
 }
 
 function printHelp() {
-  console.log(`Codex Unpacked CLI
+  console.log(`Codex Unpacker CLI
 
 Usage:
-  npx github:ChloeVPin/codex-unpacked status
-  npx github:ChloeVPin/codex-unpacked probe
-  npx github:ChloeVPin/codex-unpacked publish [--force]
-  npx github:ChloeVPin/codex-unpacked local <path.msix> [--dry-run]
-  npx github:ChloeVPin/codex-unpacked local <path.msix> --publish [--force]
+  npx github:ChloeVPin/codex-unpacker status
+  npx github:ChloeVPin/codex-unpacker probe
+  npx github:ChloeVPin/codex-unpacker publish [--force]
+  npx github:ChloeVPin/codex-unpacker local <path.msix> [--dry-run]
+  npx github:ChloeVPin/codex-unpacker local <path.msix> --publish [--force]
 
 Requires GitHub CLI auth for publishing:
   gh auth login
@@ -160,7 +160,7 @@ async function publishLatest(force) {
     return { mode: 'No update', version: source.packageVersion, sha256: source.expectedSha256, message: 'Latest package already matches data/latest.json.' };
   }
 
-  const temp = await fs.mkdtemp(join(tmpdir(), 'codex-unpacked-'));
+  const temp = await fs.mkdtemp(join(tmpdir(), 'codex-unpacker-'));
   try {
     const target = join(temp, `${source.packageMoniker}.Msix`);
     console.log(`downloading ${source.packageMoniker}`);
@@ -414,19 +414,19 @@ function parseIdentity(xml) {
 }
 
 async function getJson(url) {
-  const response = await fetch(url, { headers: { 'User-Agent': 'codex-unpacked/1.0', Accept: 'application/vnd.github+json, application/json, */*' } });
+  const response = await fetch(url, { headers: { 'User-Agent': 'codex-unpacker/1.0', Accept: 'application/vnd.github+json, application/json, */*' } });
   if (!response.ok) throw new Error(`HTTP ${response.status} from ${url}: ${await response.text()}`);
   return response.json();
 }
 
 async function getText(url) {
-  const response = await fetch(url, { headers: { 'User-Agent': 'codex-unpacked/1.0' } });
+  const response = await fetch(url, { headers: { 'User-Agent': 'codex-unpacker/1.0' } });
   if (!response.ok) throw new Error(`HTTP ${response.status} from ${url}: ${await response.text()}`);
   return response.text();
 }
 
 async function downloadFile(url, target) {
-  const response = await fetch(url, { headers: { 'User-Agent': 'codex-unpacked/1.0' } });
+  const response = await fetch(url, { headers: { 'User-Agent': 'codex-unpacker/1.0' } });
   if (!response.ok) throw new Error(`HTTP ${response.status} from ${url}: ${await response.text()}`);
   await fs.mkdir(dirname(target), { recursive: true });
   const file = await fs.open(target, 'w');

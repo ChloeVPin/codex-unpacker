@@ -58,8 +58,16 @@ button {
   text-transform: uppercase;
 }
 
+.lede {
+  max-width: 40ch;
+  margin-top: 8px;
+  color: #b3bec4;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 .version {
-  margin-top: 7px;
+  margin-top: 6px;
   color: #78858b;
   font-size: 12px;
   font-weight: 700;
