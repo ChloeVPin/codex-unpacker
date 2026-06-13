@@ -2,7 +2,6 @@ package main
 
 import (
 	"runtime"
-	"strings"
 	"testing"
 )
 
@@ -63,11 +62,5 @@ func TestStateForTarget(t *testing.T) {
 	got := stateForTarget(state, target)
 	if got.Package.Version != "26.609.41114" {
 		t.Fatalf("stateForTarget returned version %q, want %q", got.Package.Version, "26.609.41114")
-	}
-}
-
-func TestLogoBannerLoaded(t *testing.T) {
-	if strings.TrimSpace(appLogoBanner) == "" {
-		t.Fatal("appLogoBanner is empty")
 	}
 }

@@ -155,7 +155,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) View() string {
-	header := bannerSection(m.width, m.pending > 0, spinnerFrames[m.frame%len(spinnerFrames)])
+	title := titleStyle.Render("codex-unpacker v" + appVersion)
+	if m.pending > 0 {
+		title += " " + spinnerStyle.Render(spinnerFrames[m.frame%len(spinnerFrames)])
+	}
+
+	subtitle := subtitleStyle.Render("Downloads the latest Codex package to your Downloads folder.")
 
 	saved := infoCard("Saved", savedSummary(stateForTarget(m.state, m.target)))
 	latest := infoCard("Latest", latestSummary(m.probe))
@@ -170,7 +175,8 @@ func (m model) View() string {
 	}
 
 	return outerStyle.Render(lipgloss.JoinVertical(lipgloss.Left,
-		header,
+		title,
+		subtitle,
 		"",
 		summary,
 		"",
@@ -180,33 +186,6 @@ func (m model) View() string {
 		"",
 		footer,
 	))
-}
-
-func bannerSection(width int, busy bool, spinner string) string {
-	innerWidth := clamp(width-4, 48, 96)
-	lines := make([]string, 0, 4)
-	if appLogoBanner != "" && innerWidth >= 60 {
-		lines = append(lines, lipgloss.NewStyle().
-			Width(innerWidth).
-			Align(lipgloss.Center).
-			Render(appLogoBanner))
-		lines = append(lines, "")
-	}
-
-	title := titleStyle.Render("codex-unpacker v" + appVersion)
-	if busy {
-		title += " " + spinnerStyle.Render(spinner)
-	}
-	lines = append(lines, lipgloss.NewStyle().
-		Width(innerWidth).
-		Align(lipgloss.Center).
-		Render(title))
-	lines = append(lines, lipgloss.NewStyle().
-		Width(innerWidth).
-		Align(lipgloss.Center).
-		Render(subtitleStyle.Render("Downloads the latest Codex package to your Downloads folder.")))
-
-	return lipgloss.JoinVertical(lipgloss.Left, lines...)
 }
 
 func loadStateCmd() tea.Cmd {

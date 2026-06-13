@@ -51,5 +51,5 @@ That opens the TUI.
 - `download` saves to your Downloads folder if you do not pass an output path.
 - `inspect` validates an existing Codex package and prints its version and hash.
 - `data/latest.json` is local state only; it is not a release artifact, and it keeps Windows and macOS entries separate.
-- The README header and TUI banner both use the bundled logo in `assets/logo.png`.
+- The README header uses the bundled logo in `assets/logo.png`.
 - This repository no longer contains Wails, Node, or GitHub release automation.
