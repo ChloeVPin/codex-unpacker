@@ -1,18 +1,18 @@
 # codex-unpacker
 
-`codex-unpacker` is a small Windows-first Go tool for finding the latest Codex MSIX and saving it to your Downloads folder by default.
+`codex-unpacker` is a small Go tool for finding the latest Codex package and saving it to your Downloads folder by default.
 
-It ships as a terminal app with a TUI for interactive use and a compact CLI for scripting. It does not publish anything to GitHub Releases.
+It ships as a terminal app with a TUI for interactive use and a compact CLI for scripting. It understands the Windows MSIX path and the macOS DMG path, but it does not publish anything to GitHub Releases.
 
 ## What It Does
 
-- Checks the official Codex update manifest.
-- Resolves the matching Codex MSIX from the mirror release when needed.
-- Downloads the package to `%USERPROFILE%\Downloads` by default.
-- Validates the downloaded MSIX contents.
+- Checks the official Codex update manifest for Windows.
+- Resolves the matching Codex MSIX on Windows and the matching Codex DMG on macOS.
+- Downloads the package to your `Downloads` folder by default.
+- Validates Windows MSIX structure and macOS SHA256 integrity.
 - Computes SHA256 for the package.
-- Inspects a local `.msix` file without downloading anything.
-- Records the last successful download in `data/latest.json`.
+- Inspects a local `.msix` or `.dmg` file without downloading anything.
+- Records the last successful download per target in `data/latest.json`.
 
 ## Build
 
@@ -32,16 +32,20 @@ That opens the TUI.
 
 ```powershell
 .\codex-unpacker.exe probe
+.\codex-unpacker.exe probe --platform macos --arch arm64
 .\codex-unpacker.exe download
+.\codex-unpacker.exe download --platform macos --arch arm64
 .\codex-unpacker.exe download --output .\Downloads
 .\codex-unpacker.exe download --output .\Downloads\codex-unpacker-latest.msix
 .\codex-unpacker.exe inspect .\OpenAI.Codex_26.609.4994.0_x64__2p2nqsd0c76g0.Msix
+.\codex-unpacker.exe inspect .\Codex-26.609.41114-arm64.dmg
 ```
 
 ## Notes
 
-- `download` saves to the Windows Downloads folder if you do not pass an output path.
-- `inspect` validates an existing Codex MSIX and prints its version and hash.
-- `data/latest.json` is local state only; it is not a release artifact.
+- `probe` and `download` default to the current host target when you do not pass `--platform`.
+- `download` saves to your Downloads folder if you do not pass an output path.
+- `inspect` validates an existing Codex package and prints its version and hash.
+- `data/latest.json` is local state only; it is not a release artifact, and it keeps Windows and macOS entries separate.
 - This repository no longer contains Wails, Node, or GitHub release automation.
 

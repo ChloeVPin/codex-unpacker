@@ -11,6 +11,7 @@ import (
 )
 
 type model struct {
+	target    TargetSpec
 	state     StoredState
 	probe     ProbeResult
 	result    DownloadResult
@@ -42,8 +43,10 @@ type tickMsg struct{}
 
 var spinnerFrames = []string{"|", "/", "-", `\`}
 
-func newModel() model {
+func newModel(target TargetSpec) model {
 	return model{
+		target:  target,
+		probe:   ProbeResult{Target: target},
 		logs:    []string{"Starting codex-unpacker."},
 		pending: 2,
 		phase:   "checking",
@@ -53,7 +56,7 @@ func newModel() model {
 func (m model) Init() tea.Cmd {
 	return tea.Batch(
 		loadStateCmd(),
-		probeCmd(),
+		probeCmd(m.target),
 		tickCmd(),
 	)
 }
@@ -72,13 +75,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.pending == 0 {
 				m.beginWork(2, "checking")
 				m.appendLog("Refreshing saved state and upstream metadata.")
-				return m, tea.Batch(loadStateCmd(), probeCmd(), tickCmd())
+				return m, tea.Batch(loadStateCmd(), probeCmd(m.target), tickCmd())
 			}
 		case "d":
 			if m.pending == 0 {
 				m.beginWork(1, "downloading")
-				m.appendLog("Downloading the latest Codex MSIX to Downloads.")
-				return m, tea.Batch(downloadCmd(""), tickCmd())
+				m.appendLog("Downloading the latest Codex package to Downloads.")
+				return m, tea.Batch(downloadCmd(m.target, ""), tickCmd())
 			}
 		}
 		return m, nil
@@ -94,10 +97,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.appendLog("State load error: " + msg.Err.Error())
 		} else {
 			m.state = msg.State
-			if msg.State.Package.Version == "" {
-				m.appendLog("No saved package yet.")
+			saved := stateForTarget(m.state, m.target)
+			if saved.Package.Version == "" {
+				m.appendLog("No saved package yet for " + targetLabel(m.target) + ".")
 			} else {
-				m.appendLog("Loaded saved package " + msg.State.Package.Version + ".")
+				m.appendLog("Loaded saved package " + saved.Package.Version + " for " + targetLabel(m.target) + ".")
 			}
 		}
 		m.finishWork()
@@ -108,11 +112,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.appendLog("Probe error: " + msg.Err.Error())
 		} else {
 			m.probe = msg.Result
+			m.probe.Target = m.target
 			if msg.Result.Source.Version != "" {
 				if msg.Result.WouldUpdate {
-					m.appendLog("Latest Codex version found: " + msg.Result.Source.Version + ".")
+					m.appendLog("Latest Codex version found for " + targetLabel(m.target) + ": " + msg.Result.Source.Version + ".")
 				} else {
-					m.appendLog("Saved copy already matches the latest Codex version.")
+					m.appendLog("Saved copy already matches the latest Codex version for " + targetLabel(m.target) + ".")
 				}
 			}
 		}
@@ -124,17 +129,24 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.appendLog("Download error: " + msg.Err.Error())
 		} else {
 			m.result = msg.Result
-			m.state = StoredState{
-				SchemaVersion: 1,
-				UpdatedAt:     time.Now().UTC().Format(time.RFC3339),
-				Package:       msg.Result.Package,
-				Source:        msg.Result.Source,
+			now := time.Now().UTC().Format(time.RFC3339)
+			if m.state.Targets == nil {
+				m.state.Targets = map[string]StoredTargetState{}
 			}
-			m.probe.State = m.state
+			entry := StoredTargetState{
+				UpdatedAt: now,
+				Package:   msg.Result.Package,
+				Source:    msg.Result.Source,
+			}
+			m.state.SchemaVersion = 2
+			m.state.UpdatedAt = now
+			m.state.Targets[targetKey(m.target)] = entry
+			m.probe.State = entry
 			m.probe.Source = msg.Result.Source
 			m.probe.DefaultDestination = msg.Result.Destination
 			m.probe.WouldUpdate = false
-			m.appendLog("Saved " + msg.Result.Package.Version + " to " + msg.Result.Destination + ".")
+			m.probe.Target = m.target
+			m.appendLog("Saved " + msg.Result.Package.Version + " for " + targetLabel(m.target) + " to " + msg.Result.Destination + ".")
 		}
 		m.finishWork()
 		return m, m.nextTick()
@@ -143,14 +155,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) View() string {
-	title := titleStyle.Render("codex-unpacker")
+	title := titleStyle.Render("codex-unpacker v" + appVersion)
 	if m.pending > 0 {
 		title += " " + spinnerStyle.Render(spinnerFrames[m.frame%len(spinnerFrames)])
 	}
 
-	subtitle := subtitleStyle.Render("Downloads the latest Codex MSIX to your Windows Downloads folder.")
+	subtitle := subtitleStyle.Render("Downloads the latest Codex package to your Downloads folder.")
 
-	saved := infoCard("Saved", savedSummary(m.state))
+	saved := infoCard("Saved", savedSummary(stateForTarget(m.state, m.target)))
 	latest := infoCard("Latest", latestSummary(m.probe))
 	target := infoCard("Target", targetSummary(m.probe))
 	summary := summaryRow(m.width, saved, latest, target)
@@ -183,16 +195,16 @@ func loadStateCmd() tea.Cmd {
 	}
 }
 
-func probeCmd() tea.Cmd {
+func probeCmd(target TargetSpec) tea.Cmd {
 	return func() tea.Msg {
-		result, err := ProbeLatest()
+		result, err := ProbeLatest(target)
 		return probeMsg{Result: result, Err: err}
 	}
 }
 
-func downloadCmd(target string) tea.Cmd {
+func downloadCmd(target TargetSpec, output string) tea.Cmd {
 	return func() tea.Msg {
-		result, err := DownloadLatest(target)
+		result, err := DownloadLatest(target, output)
 		return downloadMsg{Result: result, Err: err}
 	}
 }
@@ -246,7 +258,7 @@ func statusLine(m model) string {
 	}
 }
 
-func savedSummary(state StoredState) string {
+func savedSummary(state StoredTargetState) string {
 	if state.Package.Version == "" {
 		return "No saved package yet."
 	}
@@ -254,6 +266,9 @@ func savedSummary(state StoredState) string {
 	lines := []string{
 		state.Package.Version,
 		"SHA " + shortHash(state.Package.SHA256),
+	}
+	if state.Package.Target.Platform != "" {
+		lines = append([]string{targetLabel(state.Package.Target)}, lines...)
 	}
 	if state.UpdatedAt != "" {
 		lines = append(lines, formatTimestamp(state.UpdatedAt))
@@ -268,6 +283,7 @@ func latestSummary(probe ProbeResult) string {
 
 	lines := []string{
 		probe.Source.Version,
+		packageKindLabel(probe.Source.PackageKind),
 		probe.Source.SourceKind,
 	}
 	if probe.Source.Size > 0 {
@@ -280,10 +296,13 @@ func latestSummary(probe ProbeResult) string {
 }
 
 func targetSummary(probe ProbeResult) string {
+	lines := []string{targetLabel(probe.Target)}
 	if probe.DefaultDestination == "" {
-		return "Downloads folder"
+		lines = append(lines, "Downloads folder")
+	} else {
+		lines = append(lines, splitPathForCard(probe.DefaultDestination))
 	}
-	return splitPathForCard(probe.DefaultDestination)
+	return strings.Join(lines, "\n")
 }
 
 func infoCard(title, body string) string {

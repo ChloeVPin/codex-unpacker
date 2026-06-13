@@ -13,12 +13,14 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 )
 
 const (
 	appName             = "codex-unpacker"
+	appVersion          = "1.0.1"
 	packageName         = "OpenAI.Codex"
 	packageArchitecture = "x64"
 	packageFamilySuffix = "2p2nqsd0c76g0"
@@ -31,54 +33,71 @@ const (
 var httpClient = &http.Client{Timeout: 45 * time.Minute}
 
 type StoredState struct {
-	SchemaVersion int            `json:"schemaVersion"`
-	UpdatedAt     string         `json:"updatedAt"`
-	Package       PackageDetails `json:"package"`
-	Source        ResolvedSource `json:"source,omitempty"`
+	SchemaVersion int                          `json:"schemaVersion"`
+	UpdatedAt     string                       `json:"updatedAt"`
+	Targets       map[string]StoredTargetState `json:"targets,omitempty"`
+}
+
+type StoredTargetState struct {
+	UpdatedAt string         `json:"updatedAt"`
+	Package   PackageDetails `json:"package"`
+	Source    ResolvedSource `json:"source,omitempty"`
+}
+
+type TargetSpec struct {
+	Platform     string `json:"platform"`
+	Architecture string `json:"architecture,omitempty"`
 }
 
 type PackageDetails struct {
-	Name              string `json:"name"`
-	Version           string `json:"version"`
-	PackageMoniker    string `json:"packageMoniker"`
-	PackageFamilyName string `json:"packageFamilyName"`
-	Publisher         string `json:"publisher"`
-	Architecture      string `json:"architecture"`
-	SHA256            string `json:"sha256"`
-	Size              int64  `json:"size"`
-	FileName          string `json:"fileName"`
-	Path              string `json:"-"`
+	Target            TargetSpec `json:"target"`
+	PackageKind       string     `json:"packageKind"`
+	Name              string     `json:"name"`
+	Version           string     `json:"version"`
+	PackageMoniker    string     `json:"packageMoniker"`
+	PackageFamilyName string     `json:"packageFamilyName"`
+	Publisher         string     `json:"publisher"`
+	Architecture      string     `json:"architecture"`
+	SHA256            string     `json:"sha256"`
+	Size              int64      `json:"size"`
+	FileName          string     `json:"fileName"`
+	Path              string     `json:"-"`
 }
 
 type ResolvedSource struct {
-	SourceKind       string `json:"sourceKind"`
-	Version          string `json:"version"`
-	PackageIdentity  string `json:"packageIdentity,omitempty"`
-	StoreProductID   string `json:"storeProductId,omitempty"`
-	AssetName        string `json:"assetName,omitempty"`
-	Size             int64  `json:"size,omitempty"`
-	DownloadURL      string `json:"downloadUrl,omitempty"`
-	ChecksumURL      string `json:"checksumUrl,omitempty"`
-	ExpectedSHA256   string `json:"expectedSha256,omitempty"`
-	AssetDigest      string `json:"assetDigest,omitempty"`
-	MirrorReleaseTag string `json:"mirrorReleaseTag,omitempty"`
-	MirrorReleaseURL string `json:"mirrorReleaseUrl,omitempty"`
+	Target           TargetSpec `json:"target"`
+	SourceKind       string     `json:"sourceKind"`
+	PackageKind      string     `json:"packageKind"`
+	Version          string     `json:"version"`
+	PackageIdentity  string     `json:"packageIdentity,omitempty"`
+	StoreProductID   string     `json:"storeProductId,omitempty"`
+	AssetName        string     `json:"assetName,omitempty"`
+	Size             int64      `json:"size,omitempty"`
+	DownloadURL      string     `json:"downloadUrl,omitempty"`
+	ChecksumURL      string     `json:"checksumUrl,omitempty"`
+	ExpectedSHA256   string     `json:"expectedSha256,omitempty"`
+	AssetDigest      string     `json:"assetDigest,omitempty"`
+	MirrorReleaseTag string     `json:"mirrorReleaseTag,omitempty"`
+	MirrorReleaseURL string     `json:"mirrorReleaseUrl,omitempty"`
 }
 
 type ProbeResult struct {
-	State              StoredState    `json:"state"`
-	Source             ResolvedSource `json:"source"`
-	DefaultDestination string         `json:"defaultDestination"`
-	WouldUpdate        bool           `json:"wouldUpdate"`
+	Target             TargetSpec        `json:"target"`
+	State              StoredTargetState `json:"state"`
+	Source             ResolvedSource    `json:"source"`
+	DefaultDestination string            `json:"defaultDestination"`
+	WouldUpdate        bool              `json:"wouldUpdate"`
 }
 
 type DownloadResult struct {
+	Target      TargetSpec     `json:"target"`
 	Package     PackageDetails `json:"package"`
 	Source      ResolvedSource `json:"source"`
 	Destination string         `json:"destination"`
 }
 
 type InspectResult struct {
+	Target       TargetSpec     `json:"target"`
 	Package      PackageDetails `json:"package"`
 	MatchesState bool           `json:"matchesState"`
 }
@@ -109,6 +128,42 @@ type mirrorAsset struct {
 	ContentType        string `json:"content_type,omitempty"`
 }
 
+type mirrorManifest struct {
+	SchemaVersion int    `json:"schemaVersion"`
+	GeneratedAt   string `json:"generatedAt"`
+	Sources       struct {
+		Windows struct {
+			ProductID         string           `json:"productId"`
+			Architecture      string           `json:"architecture"`
+			Version           string           `json:"version"`
+			PackageMoniker    string           `json:"packageMoniker"`
+			URLHost           string           `json:"urlHost"`
+			UpdateManifestURL string           `json:"updateManifestUrl"`
+			UpdateManifest    officialManifest `json:"updateManifest"`
+			ContentLength     int64            `json:"contentLength"`
+			LastModified      string           `json:"lastModified"`
+			ETag              string           `json:"etag"`
+		} `json:"windows"`
+		MacOS struct {
+			Arm64 mirrorMacSource `json:"arm64"`
+			X64   mirrorMacSource `json:"x64"`
+		} `json:"macos"`
+	} `json:"sources"`
+}
+
+type mirrorMacSource struct {
+	URL                  string `json:"url"`
+	AppcastURL           string `json:"appcastUrl"`
+	ContentLength        int64  `json:"contentLength"`
+	LastModified         string `json:"lastModified"`
+	ETag                 string `json:"etag"`
+	BundleShortVersion   string `json:"bundleShortVersion"`
+	BundleVersion        string `json:"bundleVersion"`
+	BundleIdentifier     string `json:"bundleIdentifier"`
+	MinimumSystemVersion string `json:"minimumSystemVersion"`
+	SHA256               string `json:"sha256"`
+}
+
 type appxManifest struct {
 	Identity struct {
 		Name                  string `xml:"Name,attr"`
@@ -120,7 +175,6 @@ type appxManifest struct {
 
 // LoadState returns the cached local state if it exists.
 func LoadState() (StoredState, error) {
-	var state StoredState
 	body, err := os.ReadFile(statePath)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
@@ -128,8 +182,50 @@ func LoadState() (StoredState, error) {
 		}
 		return StoredState{}, err
 	}
-	if err := json.Unmarshal(body, &state); err != nil {
+	var envelope struct {
+		SchemaVersion int                          `json:"schemaVersion"`
+		UpdatedAt     string                       `json:"updatedAt"`
+		Targets       map[string]StoredTargetState `json:"targets"`
+		Package       PackageDetails               `json:"package"`
+		Source        ResolvedSource               `json:"source,omitempty"`
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil {
 		return StoredState{}, err
+	}
+
+	state := StoredState{
+		SchemaVersion: envelope.SchemaVersion,
+		UpdatedAt:     envelope.UpdatedAt,
+		Targets:       envelope.Targets,
+	}
+	if len(state.Targets) == 0 && envelope.Package.Version != "" {
+		target := inferTargetSpecFromPackage(envelope.Package)
+		envelope.Package.Target = target
+		if envelope.Package.PackageKind == "" {
+			switch target.Platform {
+			case "macos":
+				envelope.Package.PackageKind = "dmg"
+			default:
+				envelope.Package.PackageKind = "msix"
+			}
+		}
+		envelope.Source.Target = target
+		if envelope.Source.PackageKind == "" {
+			envelope.Source.PackageKind = envelope.Package.PackageKind
+		}
+		state.Targets = map[string]StoredTargetState{
+			targetKey(target): {
+				UpdatedAt: envelope.UpdatedAt,
+				Package:   envelope.Package,
+				Source:    envelope.Source,
+			},
+		}
+	}
+	if state.Targets == nil {
+		state.Targets = map[string]StoredTargetState{}
+	}
+	if state.SchemaVersion == 0 {
+		state.SchemaVersion = 2
 	}
 	return state, nil
 }
@@ -137,6 +233,12 @@ func LoadState() (StoredState, error) {
 func SaveState(state StoredState) error {
 	if err := os.MkdirAll(filepath.Dir(statePath), 0o755); err != nil {
 		return err
+	}
+	if state.SchemaVersion == 0 {
+		state.SchemaVersion = 2
+	}
+	if state.Targets == nil {
+		state.Targets = map[string]StoredTargetState{}
 	}
 	body, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {
@@ -146,20 +248,70 @@ func SaveState(state StoredState) error {
 	return os.WriteFile(statePath, body, 0o644)
 }
 
-func ProbeLatest() (ProbeResult, error) {
+func defaultTargetSpec() TargetSpec {
+	switch runtime.GOOS {
+	case "windows":
+		return TargetSpec{Platform: "windows", Architecture: "x64"}
+	case "darwin":
+		return TargetSpec{Platform: "macos", Architecture: architectureFromGo(runtime.GOARCH)}
+	default:
+		return TargetSpec{Platform: strings.ToLower(runtime.GOOS), Architecture: architectureFromGo(runtime.GOARCH)}
+	}
+}
+
+func resolveTargetSpec(platform, architecture string) (TargetSpec, error) {
+	spec := defaultTargetSpec()
+	platformProvided := strings.TrimSpace(platform) != ""
+	archProvided := strings.TrimSpace(architecture) != ""
+
+	if platformProvided {
+		spec.Platform = normalizePlatform(platform)
+		if !archProvided {
+			spec.Architecture = ""
+		}
+	}
+	if archProvided {
+		spec.Architecture = normalizeArchitecture(architecture)
+	}
+
+	switch spec.Platform {
+	case "windows":
+		if spec.Architecture == "" {
+			spec.Architecture = "x64"
+		}
+		if spec.Architecture != "x64" {
+			return TargetSpec{}, fmt.Errorf("windows downloads only support x64 at the moment")
+		}
+	case "macos":
+		if spec.Architecture == "" {
+			if spec.Platform == "macos" && runtime.GOOS != "darwin" {
+				spec.Architecture = "arm64"
+			} else {
+				spec.Architecture = architectureFromGo(runtime.GOARCH)
+			}
+		}
+		if spec.Architecture != "arm64" && spec.Architecture != "x64" {
+			return TargetSpec{}, fmt.Errorf("macOS downloads only support arm64 or x64")
+		}
+	default:
+		return TargetSpec{}, fmt.Errorf("unsupported platform %q", spec.Platform)
+	}
+
+	return spec, nil
+}
+
+func ProbeLatest(target TargetSpec) (ProbeResult, error) {
 	state, err := LoadState()
 	if err != nil {
 		return ProbeResult{}, err
 	}
-	source, err := resolveLatestSource()
+	source, err := resolveLatestSource(target)
 	if err != nil {
 		return ProbeResult{}, err
 	}
 
-	wouldUpdate := !strings.EqualFold(state.Package.Version, source.Version)
-	if source.ExpectedSHA256 != "" && strings.EqualFold(state.Package.Version, source.Version) {
-		wouldUpdate = !sameHash(state.Package.SHA256, source.ExpectedSHA256)
-	}
+	saved := stateForTarget(state, target)
+	wouldUpdate := !packageMatchesSource(saved.Package, source)
 
 	destination, err := defaultDownloadPath(source.AssetName)
 	if err != nil {
@@ -167,20 +319,21 @@ func ProbeLatest() (ProbeResult, error) {
 	}
 
 	return ProbeResult{
-		State:              state,
+		Target:             target,
+		State:              saved,
 		Source:             source,
 		DefaultDestination: destination,
 		WouldUpdate:        wouldUpdate,
 	}, nil
 }
 
-func DownloadLatest(target string) (DownloadResult, error) {
-	source, err := resolveLatestSource()
+func DownloadLatest(target TargetSpec, output string) (DownloadResult, error) {
+	source, err := resolveLatestSource(target)
 	if err != nil {
 		return DownloadResult{}, err
 	}
 
-	destination, err := resolveTargetPath(target, source.AssetName)
+	destination, err := resolveTargetPath(output, source.AssetName)
 	if err != nil {
 		return DownloadResult{}, err
 	}
@@ -190,17 +343,25 @@ func DownloadLatest(target string) (DownloadResult, error) {
 		return DownloadResult{}, err
 	}
 
-	state := StoredState{
-		SchemaVersion: 1,
-		UpdatedAt:     time.Now().UTC().Format(time.RFC3339),
-		Package:       pkg,
-		Source:        source,
+	state, err := LoadState()
+	if err != nil {
+		return DownloadResult{}, err
 	}
+	if state.Targets == nil {
+		state.Targets = map[string]StoredTargetState{}
+	}
+	state.Targets[targetKey(target)] = StoredTargetState{
+		UpdatedAt: time.Now().UTC().Format(time.RFC3339),
+		Package:   pkg,
+		Source:    source,
+	}
+	state.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 	if err := SaveState(state); err != nil {
 		return DownloadResult{}, err
 	}
 
 	return DownloadResult{
+		Target:      target,
 		Package:     pkg,
 		Source:      source,
 		Destination: destination,
@@ -208,7 +369,7 @@ func DownloadLatest(target string) (DownloadResult, error) {
 }
 
 func InspectLocal(path string) (InspectResult, error) {
-	pkg, err := inspectMSIX(path, "")
+	pkg, err := inspectLocalPackage(path)
 	if err != nil {
 		return InspectResult{}, err
 	}
@@ -217,17 +378,28 @@ func InspectLocal(path string) (InspectResult, error) {
 		return InspectResult{}, err
 	}
 
-	matches := state.Package.Version != "" &&
-		strings.EqualFold(state.Package.Version, pkg.Version) &&
-		sameHash(state.Package.SHA256, pkg.SHA256)
+	saved := stateForTarget(state, pkg.Target)
+	matches := packageMatchesPackage(saved.Package, pkg)
 
 	return InspectResult{
+		Target:       pkg.Target,
 		Package:      pkg,
 		MatchesState: matches,
 	}, nil
 }
 
-func resolveLatestSource() (ResolvedSource, error) {
+func resolveLatestSource(target TargetSpec) (ResolvedSource, error) {
+	switch target.Platform {
+	case "windows":
+		return resolveWindowsSource(target)
+	case "macos":
+		return resolveMacOSSource(target)
+	default:
+		return ResolvedSource{}, fmt.Errorf("unsupported platform %q", target.Platform)
+	}
+}
+
+func resolveWindowsSource(target TargetSpec) (ResolvedSource, error) {
 	manifest, err := fetchOfficialManifest()
 	if err != nil {
 		return ResolvedSource{}, err
@@ -249,7 +421,9 @@ func resolveLatestSource() (ResolvedSource, error) {
 			return ResolvedSource{}, fmt.Errorf("official manifest points to %q but the version could not be determined", direct)
 		}
 		return ResolvedSource{
+			Target:          target,
 			SourceKind:      "OfficialManifest",
+			PackageKind:     "msix",
 			Version:         version,
 			PackageIdentity: packageIdentity,
 			StoreProductID:  storeProductID,
@@ -280,7 +454,9 @@ func resolveLatestSource() (ResolvedSource, error) {
 	}
 
 	return ResolvedSource{
+		Target:           target,
 		SourceKind:       "MirrorRelease",
+		PackageKind:      "msix",
 		Version:          version,
 		PackageIdentity:  packageIdentity,
 		StoreProductID:   storeProductID,
@@ -290,6 +466,52 @@ func resolveLatestSource() (ResolvedSource, error) {
 		ChecksumURL:      checksumURL,
 		ExpectedSHA256:   checksum,
 		AssetDigest:      parseDigest(asset.Digest),
+		MirrorReleaseTag: release.TagName,
+		MirrorReleaseURL: release.HTMLURL,
+	}, nil
+}
+
+func resolveMacOSSource(target TargetSpec) (ResolvedSource, error) {
+	release, err := fetchMirrorRelease()
+	if err != nil {
+		return ResolvedSource{}, err
+	}
+
+	manifest, err := fetchMirrorManifest(release.Assets)
+	if err != nil {
+		return ResolvedSource{}, err
+	}
+
+	macSource, err := selectMacSource(manifest, target.Architecture)
+	if err != nil {
+		return ResolvedSource{}, err
+	}
+
+	version := strings.TrimSpace(macSource.BundleShortVersion)
+	if version == "" {
+		version = versionFromAssetName(macSource.URL)
+	}
+	if version == "" {
+		return ResolvedSource{}, fmt.Errorf("unable to infer macOS version from %q", macSource.URL)
+	}
+
+	assetName := filepath.Base(macSource.URL)
+	expectedSHA256 := strings.TrimSpace(macSource.SHA256)
+	if expectedSHA256 == "" {
+		return ResolvedSource{}, fmt.Errorf("mirror manifest is missing the macOS SHA256 for %s", target.Architecture)
+	}
+
+	return ResolvedSource{
+		Target:           target,
+		SourceKind:       "MirrorManifest",
+		PackageKind:      "dmg",
+		Version:          version,
+		AssetName:        assetName,
+		Size:             macSource.ContentLength,
+		DownloadURL:      macSource.URL,
+		ChecksumURL:      releaseAssetURL(release.Assets, "SHA256SUMS-macos.txt"),
+		ExpectedSHA256:   expectedSHA256,
+		AssetDigest:      expectedSHA256,
 		MirrorReleaseTag: release.TagName,
 		MirrorReleaseURL: release.HTMLURL,
 	}, nil
@@ -309,6 +531,51 @@ func fetchMirrorRelease() (mirrorRelease, error) {
 		return mirrorRelease{}, fmt.Errorf("mirror release fetch failed: %w", err)
 	}
 	return release, nil
+}
+
+func fetchMirrorManifest(assets []mirrorAsset) (mirrorManifest, error) {
+	assetURL := releaseAssetURL(assets, "release-manifest.json")
+	if assetURL == "" {
+		return mirrorManifest{}, errors.New("mirror release is missing release-manifest.json")
+	}
+
+	var manifest mirrorManifest
+	if err := fetchJSON(assetURL, &manifest); err != nil {
+		return mirrorManifest{}, fmt.Errorf("mirror manifest fetch failed: %w", err)
+	}
+	return manifest, nil
+}
+
+func releaseAssetURL(assets []mirrorAsset, name string) string {
+	for _, asset := range assets {
+		if strings.EqualFold(asset.Name, name) {
+			return asset.BrowserDownloadURL
+		}
+	}
+	return ""
+}
+
+func selectMacSource(manifest mirrorManifest, architecture string) (mirrorMacSource, error) {
+	switch normalizeArchitecture(architecture) {
+	case "", "arm64":
+		if strings.TrimSpace(manifest.Sources.MacOS.Arm64.URL) != "" {
+			return manifest.Sources.MacOS.Arm64, nil
+		}
+		if strings.TrimSpace(manifest.Sources.MacOS.X64.URL) != "" {
+			return manifest.Sources.MacOS.X64, nil
+		}
+	case "x64":
+		if strings.TrimSpace(manifest.Sources.MacOS.X64.URL) != "" {
+			return manifest.Sources.MacOS.X64, nil
+		}
+		if strings.TrimSpace(manifest.Sources.MacOS.Arm64.URL) != "" {
+			return manifest.Sources.MacOS.Arm64, nil
+		}
+	default:
+		return mirrorMacSource{}, fmt.Errorf("unsupported macOS architecture %q", architecture)
+	}
+
+	return mirrorMacSource{}, errors.New("mirror manifest is missing macOS download metadata")
 }
 
 func directPackageURLFromManifest(manifest officialManifest) string {
@@ -396,7 +663,7 @@ func downloadAndInspect(source ResolvedSource, destination string) (PackageDetai
 		return PackageDetails{}, err
 	}
 
-	pkg, err := inspectMSIX(tempPath, source.Version)
+	pkg, err := inspectDownloadedPackage(tempPath, source)
 	if err != nil {
 		return PackageDetails{}, err
 	}
@@ -417,7 +684,73 @@ func downloadAndInspect(source ResolvedSource, destination string) (PackageDetai
 	return pkg, nil
 }
 
-func inspectMSIX(path string, expectedVersion string) (PackageDetails, error) {
+func inspectDownloadedPackage(path string, source ResolvedSource) (PackageDetails, error) {
+	switch strings.ToLower(strings.TrimSpace(source.PackageKind)) {
+	case "msix":
+		return inspectMSIX(path, source.Version, source.Target)
+	case "dmg":
+		return inspectDMG(path, source)
+	default:
+		return PackageDetails{}, fmt.Errorf("unsupported package kind %q", source.PackageKind)
+	}
+}
+
+func inspectLocalPackage(path string) (PackageDetails, error) {
+	target := inferTargetSpecFromPath(path)
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".msix", ".appx", ".msixbundle", ".appxbundle":
+		pkg, err := inspectMSIX(path, "", target)
+		if err != nil {
+			return PackageDetails{}, err
+		}
+		pkg.Target = target
+		pkg.PackageKind = "msix"
+		return pkg, nil
+	case ".dmg":
+		pkg, err := inspectDMG(path, ResolvedSource{Target: target, PackageKind: "dmg"})
+		if err != nil {
+			return PackageDetails{}, err
+		}
+		return pkg, nil
+	default:
+		return PackageDetails{}, fmt.Errorf("unsupported package type %q", filepath.Ext(path))
+	}
+}
+
+func inspectDMG(path string, source ResolvedSource) (PackageDetails, error) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return PackageDetails{}, err
+	}
+
+	sum, size, err := hashFile(abs)
+	if err != nil {
+		return PackageDetails{}, err
+	}
+	if expected := source.ExpectedSHA256; expected != "" && !sameHash(sum, expected) {
+		return PackageDetails{}, fmt.Errorf("downloaded package hash mismatch: expected %s, got %s", expected, sum)
+	}
+
+	fileName := filepath.Base(abs)
+	version := source.Version
+	if version == "" {
+		version = versionFromAssetName(fileName)
+	}
+
+	return PackageDetails{
+		Target:       source.Target,
+		PackageKind:  "dmg",
+		Name:         packageName,
+		Version:      version,
+		SHA256:       sum,
+		Size:         size,
+		FileName:     fileName,
+		Path:         abs,
+		Architecture: source.Target.Architecture,
+	}, nil
+}
+
+func inspectMSIX(path string, expectedVersion string, target TargetSpec) (PackageDetails, error) {
 	abs, err := filepath.Abs(path)
 	if err != nil {
 		return PackageDetails{}, err
@@ -490,6 +823,8 @@ func inspectMSIX(path string, expectedVersion string) (PackageDetails, error) {
 	}
 
 	return PackageDetails{
+		Target:            target,
+		PackageKind:       "msix",
 		Name:              manifest.Identity.Name,
 		Version:           manifest.Identity.Version,
 		PackageMoniker:    moniker,
@@ -540,21 +875,9 @@ func resolveTargetPath(target string, defaultName string) (string, error) {
 func resolvedFileName(candidate string) string {
 	candidate = strings.TrimSpace(candidate)
 	if candidate == "" {
-		return packageAssetName("")
+		return appName
 	}
-	if looksLikePackageURL(candidate) {
-		return filepath.Base(candidate)
-	}
-	if strings.HasSuffix(strings.ToLower(candidate), strings.ToLower(packageExtension)) {
-		return filepath.Base(candidate)
-	}
-	if version := versionFromAssetName(candidate); version != "" {
-		return candidate
-	}
-	if strings.Contains(candidate, "_") && strings.Contains(candidate, packageFamilySuffix) {
-		return candidate
-	}
-	return packageAssetName(candidate)
+	return filepath.Base(candidate)
 }
 
 func packageAssetName(version string) string {
@@ -567,12 +890,229 @@ func packageAssetName(version string) string {
 func versionFromAssetName(name string) string {
 	base := filepath.Base(name)
 	base = strings.TrimSuffix(base, filepath.Ext(base))
-	prefix := packageName + "_"
-	suffix := "_" + packageArchitecture + "__" + packageFamilySuffix
-	if !strings.HasPrefix(base, prefix) || !strings.HasSuffix(base, suffix) {
+	switch {
+	case strings.HasPrefix(base, packageName+"_") && strings.Contains(base, "__"+packageFamilySuffix):
+		prefix := packageName + "_"
+		suffix := "_" + packageArchitecture + "__" + packageFamilySuffix
+		if strings.HasSuffix(base, suffix) {
+			return strings.TrimSuffix(strings.TrimPrefix(base, prefix), suffix)
+		}
+	case strings.HasPrefix(base, "Codex-"):
+		tail := strings.TrimPrefix(base, "Codex-")
+		parts := strings.Split(tail, "-")
+		if len(parts) >= 2 {
+			last := strings.ToLower(parts[len(parts)-1])
+			if isArchitectureToken(last) {
+				version := strings.Join(parts[:len(parts)-1], "-")
+				if looksLikeVersion(version) {
+					return version
+				}
+			}
+		}
+		if len(parts) >= 3 && strings.EqualFold(parts[0], "darwin") {
+			mid := strings.ToLower(parts[1])
+			if isArchitectureToken(mid) {
+				version := strings.Join(parts[2:], "-")
+				if looksLikeVersion(version) {
+					return version
+				}
+			}
+		}
+	}
+	return ""
+}
+
+func inferTargetSpecFromPackage(pkg PackageDetails) TargetSpec {
+	if pkg.Target.Platform != "" {
+		return TargetSpec{
+			Platform:     normalizePlatform(pkg.Target.Platform),
+			Architecture: normalizeArchitecture(pkg.Target.Architecture),
+		}
+	}
+	if strings.EqualFold(pkg.PackageKind, "dmg") || strings.EqualFold(filepath.Ext(pkg.FileName), ".dmg") {
+		return TargetSpec{
+			Platform:     "macos",
+			Architecture: normalizeArchitecture(pkg.Architecture),
+		}
+	}
+	arch := normalizeArchitecture(pkg.Architecture)
+	if arch == "" {
+		arch = "x64"
+	}
+	return TargetSpec{
+		Platform:     "windows",
+		Architecture: arch,
+	}
+}
+
+func inferTargetSpecFromPath(path string) TargetSpec {
+	base := filepath.Base(path)
+	ext := strings.ToLower(filepath.Ext(base))
+	switch ext {
+	case ".msix", ".appx", ".msixbundle", ".appxbundle":
+		return TargetSpec{Platform: "windows", Architecture: "x64"}
+	case ".dmg":
+		arch := ""
+		lower := strings.ToLower(base)
+		switch {
+		case strings.Contains(lower, "arm64"):
+			arch = "arm64"
+		case strings.Contains(lower, "x64"), strings.Contains(lower, "amd64"):
+			arch = "x64"
+		}
+		return TargetSpec{Platform: "macos", Architecture: arch}
+	default:
+		return TargetSpec{}
+	}
+}
+
+func stateForTarget(state StoredState, target TargetSpec) StoredTargetState {
+	if len(state.Targets) == 0 {
+		return StoredTargetState{}
+	}
+	if entry, ok := state.Targets[targetKey(target)]; ok {
+		return entry
+	}
+	return StoredTargetState{}
+}
+
+func packageMatchesSource(pkg PackageDetails, source ResolvedSource) bool {
+	if pkg.Version == "" || source.Version == "" {
+		return false
+	}
+	if !strings.EqualFold(pkg.Version, source.Version) {
+		return false
+	}
+	if source.ExpectedSHA256 != "" && !sameHash(pkg.SHA256, source.ExpectedSHA256) {
+		return false
+	}
+	if source.PackageKind != "" && !strings.EqualFold(pkg.PackageKind, source.PackageKind) {
+		return false
+	}
+	return true
+}
+
+func packageMatchesPackage(a, b PackageDetails) bool {
+	if a.Version == "" || b.Version == "" {
+		return false
+	}
+	if !strings.EqualFold(a.Version, b.Version) {
+		return false
+	}
+	if !sameHash(a.SHA256, b.SHA256) {
+		return false
+	}
+	if a.PackageKind != "" && b.PackageKind != "" && !strings.EqualFold(a.PackageKind, b.PackageKind) {
+		return false
+	}
+	return true
+}
+
+func targetKey(target TargetSpec) string {
+	return strings.ToLower(strings.TrimSpace(target.Platform)) + "/" + strings.ToLower(strings.TrimSpace(target.Architecture))
+}
+
+func targetLabel(target TargetSpec) string {
+	platform := strings.TrimSpace(target.Platform)
+	switch strings.ToLower(platform) {
+	case "windows":
+		platform = "Windows"
+	case "macos":
+		platform = "macOS"
+	default:
+		platform = titleCase(platform)
+	}
+	arch := strings.TrimSpace(target.Architecture)
+	if arch == "" {
+		return platform
+	}
+	return platform + " " + arch
+}
+
+func packageKindLabel(kind string) string {
+	switch strings.ToLower(strings.TrimSpace(kind)) {
+	case "msix":
+		return "MSIX"
+	case "dmg":
+		return "DMG"
+	default:
+		return strings.ToUpper(strings.TrimSpace(kind))
+	}
+}
+
+func titleCase(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
 		return ""
 	}
-	return strings.TrimSuffix(strings.TrimPrefix(base, prefix), suffix)
+	if len(value) == 1 {
+		return strings.ToUpper(value)
+	}
+	return strings.ToUpper(value[:1]) + strings.ToLower(value[1:])
+}
+
+func normalizePlatform(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "windows", "win", "win32":
+		return "windows"
+	case "macos", "darwin", "mac":
+		return "macos"
+	case "auto":
+		return defaultTargetSpec().Platform
+	default:
+		return strings.ToLower(strings.TrimSpace(value))
+	}
+}
+
+func normalizeArchitecture(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", "auto":
+		return ""
+	case "amd64", "x86_64":
+		return "x64"
+	case "x64":
+		return "x64"
+	case "arm64", "aarch64":
+		return "arm64"
+	default:
+		return strings.ToLower(strings.TrimSpace(value))
+	}
+}
+
+func architectureFromGo(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "amd64":
+		return "x64"
+	case "arm64":
+		return "arm64"
+	default:
+		return normalizeArchitecture(value)
+	}
+}
+
+func isArchitectureToken(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "x64", "arm64", "amd64", "x86_64", "aarch64":
+		return true
+	default:
+		return false
+	}
+}
+
+func looksLikeVersion(value string) bool {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return false
+	}
+	if strings.Count(value, ".") >= 1 {
+		return true
+	}
+	for _, r := range value {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func parseChecksum(body, fileName string) string {
@@ -631,7 +1171,7 @@ func fetchBytes(url string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", appName+"/1.0")
+	req.Header.Set("User-Agent", appName+"/"+appVersion)
 	req.Header.Set("Accept", "application/json, text/plain, */*")
 
 	resp, err := httpClient.Do(req)
@@ -652,7 +1192,7 @@ func downloadFile(url, path string) error {
 	if err != nil {
 		return err
 	}
-	req.Header.Set("User-Agent", appName+"/1.0")
+	req.Header.Set("User-Agent", appName+"/"+appVersion)
 
 	resp, err := httpClient.Do(req)
 	if err != nil {

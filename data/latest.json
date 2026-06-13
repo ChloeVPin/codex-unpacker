@@ -1,29 +1,44 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "updatedAt": "2026-06-13T18:59:19Z",
-  "package": {
-    "name": "OpenAI.Codex",
-    "version": "26.609.4994.0",
-    "packageMoniker": "OpenAI.Codex_26.609.4994.0_x64__2p2nqsd0c76g0",
-    "packageFamilyName": "OpenAI.Codex_2p2nqsd0c76g0",
-    "publisher": "CN=50BDFD77-8903-4850-9FFE-6E8522F64D5B",
-    "architecture": "x64",
-    "sha256": "547618a744149221078a27febdfff65c924b46ff85ab2fe1595180e128be8d85",
-    "size": 552187367,
-    "fileName": "OpenAI.Codex_26.609.4994.0_x64__2p2nqsd0c76g0.Msix"
-  },
-  "source": {
-    "sourceKind": "MirrorRelease",
-    "version": "26.609.4994.0",
-    "packageIdentity": "OpenAI.Codex",
-    "storeProductId": "9PLM9XGG6VKS",
-    "assetName": "OpenAI.Codex_26.609.4994.0_x64__2p2nqsd0c76g0.Msix",
-    "size": 552187367,
-    "downloadUrl": "https://github.com/Wangnov/codex-app-mirror/releases/download/codex-app-force-20260613-033831/OpenAI.Codex_26.609.4994.0_x64__2p2nqsd0c76g0.Msix",
-    "checksumUrl": "https://github.com/Wangnov/codex-app-mirror/releases/download/codex-app-force-20260613-033831/SHA256SUMS-windows.txt",
-    "expectedSha256": "547618a744149221078a27febdfff65c924b46ff85ab2fe1595180e128be8d85",
-    "assetDigest": "547618a744149221078a27febdfff65c924b46ff85ab2fe1595180e128be8d85",
-    "mirrorReleaseTag": "codex-app-force-20260613-033831",
-    "mirrorReleaseUrl": "https://github.com/Wangnov/codex-app-mirror/releases/tag/codex-app-force-20260613-033831"
+  "targets": {
+    "windows/x64": {
+      "updatedAt": "2026-06-13T18:59:19Z",
+      "package": {
+        "target": {
+          "platform": "windows",
+          "architecture": "x64"
+        },
+        "packageKind": "msix",
+        "name": "OpenAI.Codex",
+        "version": "26.609.4994.0",
+        "packageMoniker": "OpenAI.Codex_26.609.4994.0_x64__2p2nqsd0c76g0",
+        "packageFamilyName": "OpenAI.Codex_2p2nqsd0c76g0",
+        "publisher": "CN=50BDFD77-8903-4850-9FFE-6E8522F64D5B",
+        "architecture": "x64",
+        "sha256": "547618a744149221078a27febdfff65c924b46ff85ab2fe1595180e128be8d85",
+        "size": 552187367,
+        "fileName": "OpenAI.Codex_26.609.4994.0_x64__2p2nqsd0c76g0.Msix"
+      },
+      "source": {
+        "target": {
+          "platform": "windows",
+          "architecture": "x64"
+        },
+        "sourceKind": "MirrorRelease",
+        "packageKind": "msix",
+        "version": "26.609.4994.0",
+        "packageIdentity": "OpenAI.Codex",
+        "storeProductId": "9PLM9XGG6VKS",
+        "assetName": "OpenAI.Codex_26.609.4994.0_x64__2p2nqsd0c76g0.Msix",
+        "size": 552187367,
+        "downloadUrl": "https://github.com/Wangnov/codex-app-mirror/releases/download/codex-app-force-20260613-033831/OpenAI.Codex_26.609.4994.0_x64__2p2nqsd0c76g0.Msix",
+        "checksumUrl": "https://github.com/Wangnov/codex-app-mirror/releases/download/codex-app-force-20260613-033831/SHA256SUMS-windows.txt",
+        "expectedSha256": "547618a744149221078a27febdfff65c924b46ff85ab2fe1595180e128be8d85",
+        "assetDigest": "547618a744149221078a27febdfff65c924b46ff85ab2fe1595180e128be8d85",
+        "mirrorReleaseTag": "codex-app-force-20260613-033831",
+        "mirrorReleaseUrl": "https://github.com/Wangnov/codex-app-mirror/releases/tag/codex-app-force-20260613-033831"
+      }
+    }
   }
 }

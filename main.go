@@ -12,10 +12,12 @@ import (
 )
 
 type cliConfig struct {
-	command string
-	output  string
-	json    bool
-	path    string
+	command  string
+	output   string
+	json     bool
+	path     string
+	platform string
+	arch     string
 }
 
 func main() {
@@ -28,9 +30,9 @@ func main() {
 	case "help":
 		printUsage(os.Stdout)
 	case "probe":
-		runProbe(cfg.json)
+		runProbe(cfg)
 	case "download":
-		runDownload(cfg.output, cfg.json)
+		runDownload(cfg)
 	case "inspect":
 		runInspect(cfg.path, cfg.json)
 	default:
@@ -64,13 +66,29 @@ func parseArgs(args []string) (cliConfig, error) {
 
 func parseProbeCommand(args []string) (cliConfig, error) {
 	cfg := cliConfig{command: "probe"}
-	for _, arg := range args {
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
 		switch arg {
 		case "--json":
 			cfg.json = true
+		case "--platform":
+			i++
+			if i >= len(args) {
+				return cliConfig{}, errors.New("probe requires a value after --platform")
+			}
+			cfg.platform = args[i]
+		case "--arch":
+			i++
+			if i >= len(args) {
+				return cliConfig{}, errors.New("probe requires a value after --arch")
+			}
+			cfg.arch = args[i]
 		case "-h", "--help":
 			return cliConfig{command: "help"}, nil
 		default:
+			if strings.HasPrefix(arg, "-") {
+				return cliConfig{}, fmt.Errorf("unknown flag %q", arg)
+			}
 			return cliConfig{}, fmt.Errorf("probe does not accept positional arguments")
 		}
 	}
@@ -84,6 +102,18 @@ func parseDownloadCommand(args []string) (cliConfig, error) {
 		switch arg {
 		case "--json":
 			cfg.json = true
+		case "--platform":
+			i++
+			if i >= len(args) {
+				return cliConfig{}, errors.New("download requires a value after --platform")
+			}
+			cfg.platform = args[i]
+		case "--arch":
+			i++
+			if i >= len(args) {
+				return cliConfig{}, errors.New("download requires a value after --arch")
+			}
+			cfg.arch = args[i]
 		case "--output", "-o":
 			i++
 			if i >= len(args) {
@@ -124,36 +154,44 @@ func parseInspectCommand(args []string) (cliConfig, error) {
 		}
 	}
 	if cfg.path == "" {
-		return cliConfig{}, errors.New("inspect requires a path to a .msix file")
+		return cliConfig{}, errors.New("inspect requires a path to a package file")
 	}
 	return cfg, nil
 }
 
 func runTUI() {
-	prog := tea.NewProgram(newModel(), tea.WithAltScreen())
+	prog := tea.NewProgram(newModel(defaultTargetSpec()), tea.WithAltScreen())
 	if _, err := prog.Run(); err != nil {
 		exitErr(err)
 	}
 }
 
-func runProbe(jsonOut bool) {
-	result, err := ProbeLatest()
+func runProbe(cfg cliConfig) {
+	target, err := resolveTargetSpec(cfg.platform, cfg.arch)
 	if err != nil {
 		exitErr(err)
 	}
-	if jsonOut {
+	result, err := ProbeLatest(target)
+	if err != nil {
+		exitErr(err)
+	}
+	if cfg.json {
 		emitJSON(os.Stdout, result)
 		return
 	}
 	printProbeSummary(os.Stdout, result)
 }
 
-func runDownload(output string, jsonOut bool) {
-	result, err := DownloadLatest(output)
+func runDownload(cfg cliConfig) {
+	target, err := resolveTargetSpec(cfg.platform, cfg.arch)
 	if err != nil {
 		exitErr(err)
 	}
-	if jsonOut {
+	result, err := DownloadLatest(target, cfg.output)
+	if err != nil {
+		exitErr(err)
+	}
+	if cfg.json {
 		emitJSON(os.Stdout, result)
 		return
 	}
@@ -173,25 +211,29 @@ func runInspect(path string, jsonOut bool) {
 }
 
 func printUsage(w io.Writer) {
-	fmt.Fprintln(w, "codex-unpacker")
+	fmt.Fprintf(w, "codex-unpacker v%s\n", appVersion)
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Usage:")
 	fmt.Fprintln(w, "  codex-unpacker")
-	fmt.Fprintln(w, "  codex-unpacker probe [--json]")
-	fmt.Fprintln(w, "  codex-unpacker download [--output <folder-or-file>] [--json]")
-	fmt.Fprintln(w, "  codex-unpacker inspect <path.msix> [--json]")
+	fmt.Fprintln(w, "  codex-unpacker probe [--platform windows|macos] [--arch x64|arm64] [--json]")
+	fmt.Fprintln(w, "  codex-unpacker download [--platform windows|macos] [--arch x64|arm64] [--output <folder-or-file>] [--json]")
+	fmt.Fprintln(w, "  codex-unpacker inspect <path.msix|path.dmg> [--json]")
 	fmt.Fprintln(w)
-	fmt.Fprintln(w, "The default download target is your Windows Downloads folder.")
+	fmt.Fprintln(w, "The default download target is your current platform Downloads folder.")
 }
 
 func printProbeSummary(w io.Writer, result ProbeResult) {
 	fmt.Fprintln(w, "Codex Unpacker probe")
+	fmt.Fprintf(w, "Target: %s\n", targetLabel(result.Target))
 	fmt.Fprintf(w, "Latest version: %s\n", orText(result.Source.Version, "unknown"))
 	if result.Source.SourceKind != "" {
 		fmt.Fprintf(w, "Source: %s\n", result.Source.SourceKind)
 	}
+	if result.Source.PackageKind != "" {
+		fmt.Fprintf(w, "Package: %s\n", packageKindLabel(result.Source.PackageKind))
+	}
 	if result.Source.AssetName != "" {
-		fmt.Fprintf(w, "MSIX: %s\n", result.Source.AssetName)
+		fmt.Fprintf(w, "Artifact: %s\n", result.Source.AssetName)
 	}
 	if result.Source.DownloadURL != "" {
 		fmt.Fprintf(w, "Download URL: %s\n", result.Source.DownloadURL)
@@ -202,7 +244,7 @@ func printProbeSummary(w io.Writer, result ProbeResult) {
 	if result.State.Package.Version != "" {
 		fmt.Fprintf(w, "Saved version: %s (%s)\n", result.State.Package.Version, shortHash(result.State.Package.SHA256))
 	} else {
-		fmt.Fprintln(w, "Saved version: none")
+		fmt.Fprintln(w, "Saved version: none for this target")
 	}
 	fmt.Fprintf(w, "Default destination: %s\n", result.DefaultDestination)
 	if result.WouldUpdate {
@@ -213,7 +255,9 @@ func printProbeSummary(w io.Writer, result ProbeResult) {
 }
 
 func printDownloadSummary(w io.Writer, result DownloadResult) {
-	fmt.Fprintln(w, "Codex MSIX downloaded")
+	fmt.Fprintln(w, "Codex package downloaded")
+	fmt.Fprintf(w, "Target: %s\n", targetLabel(result.Target))
+	fmt.Fprintf(w, "Package: %s\n", packageKindLabel(result.Package.PackageKind))
 	fmt.Fprintf(w, "Version: %s\n", result.Package.Version)
 	fmt.Fprintf(w, "Saved to: %s\n", result.Destination)
 	fmt.Fprintf(w, "SHA256: %s\n", result.Package.SHA256)
@@ -221,7 +265,9 @@ func printDownloadSummary(w io.Writer, result DownloadResult) {
 }
 
 func printInspectSummary(w io.Writer, result InspectResult) {
-	fmt.Fprintln(w, "Codex MSIX inspection")
+	fmt.Fprintln(w, "Codex package inspection")
+	fmt.Fprintf(w, "Target: %s\n", targetLabel(result.Target))
+	fmt.Fprintf(w, "Package: %s\n", packageKindLabel(result.Package.PackageKind))
 	fmt.Fprintf(w, "Version: %s\n", result.Package.Version)
 	fmt.Fprintf(w, "File: %s\n", result.Package.Path)
 	fmt.Fprintf(w, "SHA256: %s\n", result.Package.SHA256)
