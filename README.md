@@ -1,8 +1,8 @@
-# codex-unpacker
+<h1 align="center">codex-unpacker</h1>
 
-`codex-unpacker` is a small Go tool for finding the latest Codex package and saving it to your Downloads folder by default.
+Terminal-first Go app for finding the latest Codex package and saving it to your Downloads folder by default.
 
-It ships as a terminal app with a TUI for interactive use and a compact CLI for scripting. It understands the Windows MSIX path and the macOS DMG path, but it does not publish anything to GitHub Releases.
+It ships as a compact TUI for interactive use and a CLI for scripting. It supports the Windows MSIX path and the macOS DMG path, and it does not automate GitHub Releases.
 
 ## What It Does
 
@@ -48,4 +48,3 @@ That opens the TUI.
 - `inspect` validates an existing Codex package and prints its version and hash.
 - `data/latest.json` is local state only; it is not a release artifact, and it keeps Windows and macOS entries separate.
 - This repository no longer contains Wails, Node, or GitHub release automation.
-
