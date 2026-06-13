@@ -1,78 +1,47 @@
-# Codex Unpacker
+# codex-unpacker
 
-Small Windows app and CLI for downloading the latest Codex MSIX locally.
+`codex-unpacker` is a small Windows-first Go tool for finding the latest Codex MSIX and saving it to your Downloads folder by default.
 
-It checks the current upstream package, saves it to a path you choose, and can inspect a Codex MSIX already on disk. It does not push anything to GitHub releases.
-
-## Quick Start
-
-The no-build path is the CLI through `npx`. If you want the desktop app, build it with Wails.
+It ships as a terminal app with a TUI for interactive use and a compact CLI for scripting. It does not publish anything to GitHub Releases.
 
 ## What It Does
 
-- Probes the current Codex Windows package metadata.
-- Downloads the latest MSIX to a local path you choose.
-- Verifies `AppxManifest.xml`, `AppxBlockMap.xml`, `AppxSignature.p7x`, and `AppxMetadata/CodeIntegrity.cat`.
-- Computes SHA256 for the downloaded package.
-- Inspects a local MSIX file without downloading anything.
-- Records the last saved package in `data/latest.json`.
-- Never publishes packages to GitHub.
+- Checks the official Codex update manifest.
+- Resolves the matching Codex MSIX from the mirror release when needed.
+- Downloads the package to `%USERPROFILE%\Downloads` by default.
+- Validates the downloaded MSIX contents.
+- Computes SHA256 for the package.
+- Inspects a local `.msix` file without downloading anything.
+- Records the last successful download in `data/latest.json`.
 
-## Requirements
-
-For the GUI:
-
-- Windows 10/11
-- A downloaded `codex-unpacker.exe`
-
-For source builds:
-
-- Windows 10/11
-- Go 1.23+
-- Wails v2
-- Node.js/npm
-- Git
-
-For `npx` usage:
-
-- Node.js 18+
-- Git
-
-## Use The GUI
-
-1. Build the GUI with `wails build`.
-2. Launch `build\bin\codex-unpacker.exe`.
-3. Click `Probe` to check the current upstream package.
-4. Click `Download` and choose a save location.
-5. Use `Choose` and `Dry run` to inspect a local `.msix`.
-
-## Use The CLI With npx
+## Build
 
 ```powershell
-npx github:ChloeVPin/codex-unpacker status
-npx github:ChloeVPin/codex-unpacker probe
-npx github:ChloeVPin/codex-unpacker download --output .\Downloads\OpenAI.Codex_26.602.4764.0_x64__2p2nqsd0c76g0.Msix
-npx github:ChloeVPin/codex-unpacker local .\OpenAI.Codex_26.602.4764.0_x64__2p2nqsd0c76g0.Msix --dry-run
+go build -o codex-unpacker.exe .
 ```
 
-## Build From Source
+## Run
 
 ```powershell
-wails dev
+.\codex-unpacker.exe
 ```
+
+That opens the TUI.
+
+## CLI
 
 ```powershell
-wails build
-```
-
-The executable is written to:
-
-```text
-build\bin\codex-unpacker.exe
+.\codex-unpacker.exe probe
+.\codex-unpacker.exe download
+.\codex-unpacker.exe download --output .\Downloads
+.\codex-unpacker.exe download --output .\Downloads\codex-unpacker-latest.msix
+.\codex-unpacker.exe inspect .\OpenAI.Codex_26.609.4994.0_x64__2p2nqsd0c76g0.Msix
 ```
 
 ## Notes
 
-- The tool is intentionally narrow: download, verify, and inspect.
-- `data/latest.json` is just local state for the last saved package.
-- Nothing in the app pushes packages to GitHub.
+- `download` saves to the Windows Downloads folder if you do not pass an output path.
+- `inspect` validates an existing Codex MSIX and prints its version and hash.
+- `data/latest.json` is local state only; it is not a release artifact.
+- This repository no longer contains Wails, Node, or GitHub release automation.
+

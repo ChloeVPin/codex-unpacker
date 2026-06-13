@@ -1,36 +1,252 @@
 package main
 
 import (
-	"embed"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"strings"
 
-	"github.com/wailsapp/wails/v2"
-	"github.com/wailsapp/wails/v2/pkg/options"
-	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
-//go:embed all:frontend/dist
-var assets embed.FS
+type cliConfig struct {
+	command string
+	output  string
+	json    bool
+	path    string
+}
 
 func main() {
-	app := NewApp()
-
-	err := wails.Run(&options.App{
-		Title:     "Codex Unpacker",
-		Width:     760,
-		Height:    620,
-		MinWidth:  680,
-		MinHeight: 560,
-		AssetServer: &assetserver.Options{
-			Assets: assets,
-		},
-		BackgroundColour: &options.RGBA{R: 16, G: 18, B: 20, A: 1},
-		OnStartup:        app.startup,
-		Bind: []interface{}{
-			app,
-		},
-	})
-
+	cfg, err := parseArgs(os.Args[1:])
 	if err != nil {
-		println("Error:", err.Error())
+		exitErr(err)
 	}
+
+	switch cfg.command {
+	case "help":
+		printUsage(os.Stdout)
+	case "probe":
+		runProbe(cfg.json)
+	case "download":
+		runDownload(cfg.output, cfg.json)
+	case "inspect":
+		runInspect(cfg.path, cfg.json)
+	default:
+		runTUI()
+	}
+}
+
+func parseArgs(args []string) (cliConfig, error) {
+	if len(args) == 0 {
+		return cliConfig{command: "tui"}, nil
+	}
+
+	switch strings.ToLower(args[0]) {
+	case "help", "-h", "--help":
+		return cliConfig{command: "help"}, nil
+	case "probe":
+		return parseProbeCommand(args[1:])
+	case "download":
+		return parseDownloadCommand(args[1:])
+	case "inspect":
+		return parseInspectCommand(args[1:])
+	case "tui":
+		return cliConfig{command: "tui"}, nil
+	default:
+		if strings.HasPrefix(args[0], "-") {
+			return cliConfig{}, fmt.Errorf("unknown flag %q", args[0])
+		}
+		return cliConfig{command: "tui"}, nil
+	}
+}
+
+func parseProbeCommand(args []string) (cliConfig, error) {
+	cfg := cliConfig{command: "probe"}
+	for _, arg := range args {
+		switch arg {
+		case "--json":
+			cfg.json = true
+		case "-h", "--help":
+			return cliConfig{command: "help"}, nil
+		default:
+			return cliConfig{}, fmt.Errorf("probe does not accept positional arguments")
+		}
+	}
+	return cfg, nil
+}
+
+func parseDownloadCommand(args []string) (cliConfig, error) {
+	cfg := cliConfig{command: "download"}
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch arg {
+		case "--json":
+			cfg.json = true
+		case "--output", "-o":
+			i++
+			if i >= len(args) {
+				return cliConfig{}, errors.New("download requires a value after --output")
+			}
+			cfg.output = args[i]
+		case "-h", "--help":
+			return cliConfig{command: "help"}, nil
+		default:
+			if strings.HasPrefix(arg, "-") {
+				return cliConfig{}, fmt.Errorf("unknown flag %q", arg)
+			}
+			if cfg.output != "" {
+				return cliConfig{}, fmt.Errorf("download accepts at most one output path")
+			}
+			cfg.output = arg
+		}
+	}
+	return cfg, nil
+}
+
+func parseInspectCommand(args []string) (cliConfig, error) {
+	cfg := cliConfig{command: "inspect"}
+	for _, arg := range args {
+		switch arg {
+		case "--json":
+			cfg.json = true
+		case "-h", "--help":
+			return cliConfig{command: "help"}, nil
+		default:
+			if strings.HasPrefix(arg, "-") {
+				return cliConfig{}, fmt.Errorf("unknown flag %q", arg)
+			}
+			if cfg.path != "" {
+				return cliConfig{}, errors.New("inspect accepts only one path")
+			}
+			cfg.path = arg
+		}
+	}
+	if cfg.path == "" {
+		return cliConfig{}, errors.New("inspect requires a path to a .msix file")
+	}
+	return cfg, nil
+}
+
+func runTUI() {
+	prog := tea.NewProgram(newModel(), tea.WithAltScreen())
+	if _, err := prog.Run(); err != nil {
+		exitErr(err)
+	}
+}
+
+func runProbe(jsonOut bool) {
+	result, err := ProbeLatest()
+	if err != nil {
+		exitErr(err)
+	}
+	if jsonOut {
+		emitJSON(os.Stdout, result)
+		return
+	}
+	printProbeSummary(os.Stdout, result)
+}
+
+func runDownload(output string, jsonOut bool) {
+	result, err := DownloadLatest(output)
+	if err != nil {
+		exitErr(err)
+	}
+	if jsonOut {
+		emitJSON(os.Stdout, result)
+		return
+	}
+	printDownloadSummary(os.Stdout, result)
+}
+
+func runInspect(path string, jsonOut bool) {
+	result, err := InspectLocal(path)
+	if err != nil {
+		exitErr(err)
+	}
+	if jsonOut {
+		emitJSON(os.Stdout, result)
+		return
+	}
+	printInspectSummary(os.Stdout, result)
+}
+
+func printUsage(w io.Writer) {
+	fmt.Fprintln(w, "codex-unpacker")
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, "Usage:")
+	fmt.Fprintln(w, "  codex-unpacker")
+	fmt.Fprintln(w, "  codex-unpacker probe [--json]")
+	fmt.Fprintln(w, "  codex-unpacker download [--output <folder-or-file>] [--json]")
+	fmt.Fprintln(w, "  codex-unpacker inspect <path.msix> [--json]")
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, "The default download target is your Windows Downloads folder.")
+}
+
+func printProbeSummary(w io.Writer, result ProbeResult) {
+	fmt.Fprintln(w, "Codex Unpacker probe")
+	fmt.Fprintf(w, "Latest version: %s\n", orText(result.Source.Version, "unknown"))
+	if result.Source.SourceKind != "" {
+		fmt.Fprintf(w, "Source: %s\n", result.Source.SourceKind)
+	}
+	if result.Source.AssetName != "" {
+		fmt.Fprintf(w, "MSIX: %s\n", result.Source.AssetName)
+	}
+	if result.Source.DownloadURL != "" {
+		fmt.Fprintf(w, "Download URL: %s\n", result.Source.DownloadURL)
+	}
+	if result.Source.ExpectedSHA256 != "" {
+		fmt.Fprintf(w, "SHA256: %s\n", result.Source.ExpectedSHA256)
+	}
+	if result.State.Package.Version != "" {
+		fmt.Fprintf(w, "Saved version: %s (%s)\n", result.State.Package.Version, shortHash(result.State.Package.SHA256))
+	} else {
+		fmt.Fprintln(w, "Saved version: none")
+	}
+	fmt.Fprintf(w, "Default destination: %s\n", result.DefaultDestination)
+	if result.WouldUpdate {
+		fmt.Fprintln(w, "Status: update available")
+	} else {
+		fmt.Fprintln(w, "Status: already current")
+	}
+}
+
+func printDownloadSummary(w io.Writer, result DownloadResult) {
+	fmt.Fprintln(w, "Codex MSIX downloaded")
+	fmt.Fprintf(w, "Version: %s\n", result.Package.Version)
+	fmt.Fprintf(w, "Saved to: %s\n", result.Destination)
+	fmt.Fprintf(w, "SHA256: %s\n", result.Package.SHA256)
+	fmt.Fprintf(w, "Size: %s\n", formatBytes(result.Package.Size))
+}
+
+func printInspectSummary(w io.Writer, result InspectResult) {
+	fmt.Fprintln(w, "Codex MSIX inspection")
+	fmt.Fprintf(w, "Version: %s\n", result.Package.Version)
+	fmt.Fprintf(w, "File: %s\n", result.Package.Path)
+	fmt.Fprintf(w, "SHA256: %s\n", result.Package.SHA256)
+	fmt.Fprintf(w, "Size: %s\n", formatBytes(result.Package.Size))
+	if result.MatchesState {
+		fmt.Fprintln(w, "Status: matches saved state")
+	} else {
+		fmt.Fprintln(w, "Status: validated locally")
+	}
+}
+
+func emitJSON(w io.Writer, value any) {
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	_ = enc.Encode(value)
+}
+
+func exitErr(err error) {
+	fmt.Fprintln(os.Stderr, "error:", err)
+	os.Exit(1)
+}
+
+func orText(value, fallback string) string {
+	if strings.TrimSpace(value) == "" {
+		return fallback
+	}
+	return value
 }

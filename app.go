@@ -2,8 +2,6 @@ package main
 
 import (
 	"archive/zip"
-	"bytes"
-	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -11,72 +9,35 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"regexp"
-	"sort"
 	"strings"
 	"time"
-
-	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 const (
-	defaultUpdateManifestURL = "https://persistent.oaistatic.com/codex-app-prod/windows-store-update.json"
-	mirrorLatestAPI          = "https://api.github.com/repos/Wangnov/codex-app-mirror/releases/latest"
-	packageIdentity          = "OpenAI.Codex"
-	packageFamilySuffix      = "2p2nqsd0c76g0"
-	architecture             = "x64"
-	statePath                = "data/latest.json"
-	releaseTagPrefix         = "codex-unpacker"
+	appName             = "codex-unpacker"
+	packageName         = "OpenAI.Codex"
+	packageArchitecture = "x64"
+	packageFamilySuffix = "2p2nqsd0c76g0"
+	packageExtension    = ".Msix"
+	officialFeedURL     = "https://persistent.oaistatic.com/codex-app-prod/windows-store-update.json"
+	mirrorLatestURL     = "https://api.github.com/repos/Wangnov/codex-app-mirror/releases/latest"
+	statePath           = "data/latest.json"
 )
 
-type App struct {
-	ctx    context.Context
-	client *http.Client
+var httpClient = &http.Client{Timeout: 45 * time.Minute}
+
+type StoredState struct {
+	SchemaVersion int            `json:"schemaVersion"`
+	UpdatedAt     string         `json:"updatedAt"`
+	Package       PackageDetails `json:"package"`
+	Source        ResolvedSource `json:"source,omitempty"`
 }
 
-type AppStatus struct {
-	StateVersion  string `json:"stateVersion"`
-	StateHash     string `json:"stateHash"`
-	WorkingFolder string `json:"workingFolder"`
-}
-
-type ProbeResult struct {
-	SourceKind            string `json:"sourceKind"`
-	UpdateManifestVersion string `json:"updateManifestVersion"`
-	PackageVersion        string `json:"packageVersion"`
-	PackageMoniker        string `json:"packageMoniker"`
-	DownloadURL           string `json:"downloadUrl"`
-	ExpectedSHA256        string `json:"expectedSha256"`
-	MirrorReleaseTag      string `json:"mirrorReleaseTag"`
-	MirrorReleaseURL      string `json:"mirrorReleaseUrl"`
-	DirectStoreStatus     string `json:"directStoreStatus"`
-	WouldUpdate           bool   `json:"wouldUpdate"`
-	CurrentStateVersion   string `json:"currentStateVersion"`
-	CurrentStateSHA256    string `json:"currentStateSha256"`
-}
-
-type DownloadResult struct {
-	Mode    string `json:"mode"`
-	Version string `json:"version"`
-	SHA256  string `json:"sha256"`
-	Path    string `json:"path"`
-	Message string `json:"message"`
-}
-
-type PublishResult struct {
-	Mode       string `json:"mode"`
-	Version    string `json:"version"`
-	SHA256     string `json:"sha256"`
-	ReleaseTag string `json:"releaseTag"`
-	ReleaseURL string `json:"releaseUrl"`
-	Message    string `json:"message"`
-}
-
-type PackageInfo struct {
+type PackageDetails struct {
 	Name              string `json:"name"`
 	Version           string `json:"version"`
 	PackageMoniker    string `json:"packageMoniker"`
@@ -86,14 +47,52 @@ type PackageInfo struct {
 	SHA256            string `json:"sha256"`
 	Size              int64  `json:"size"`
 	FileName          string `json:"fileName"`
-	Path              string `json:"path"`
+	Path              string `json:"-"`
 }
 
-type updateManifest struct {
+type ResolvedSource struct {
+	SourceKind       string `json:"sourceKind"`
+	Version          string `json:"version"`
+	PackageIdentity  string `json:"packageIdentity,omitempty"`
+	StoreProductID   string `json:"storeProductId,omitempty"`
+	AssetName        string `json:"assetName,omitempty"`
+	Size             int64  `json:"size,omitempty"`
+	DownloadURL      string `json:"downloadUrl,omitempty"`
+	ChecksumURL      string `json:"checksumUrl,omitempty"`
+	ExpectedSHA256   string `json:"expectedSha256,omitempty"`
+	AssetDigest      string `json:"assetDigest,omitempty"`
+	MirrorReleaseTag string `json:"mirrorReleaseTag,omitempty"`
+	MirrorReleaseURL string `json:"mirrorReleaseUrl,omitempty"`
+}
+
+type ProbeResult struct {
+	State              StoredState    `json:"state"`
+	Source             ResolvedSource `json:"source"`
+	DefaultDestination string         `json:"defaultDestination"`
+	WouldUpdate        bool           `json:"wouldUpdate"`
+}
+
+type DownloadResult struct {
+	Package     PackageDetails `json:"package"`
+	Source      ResolvedSource `json:"source"`
+	Destination string         `json:"destination"`
+}
+
+type InspectResult struct {
+	Package      PackageDetails `json:"package"`
+	MatchesState bool           `json:"matchesState"`
+}
+
+type officialManifest struct {
 	SchemaVersion   int    `json:"schemaVersion"`
 	BuildVersion    string `json:"buildVersion"`
 	StoreProductID  string `json:"storeProductId"`
 	PackageIdentity string `json:"packageIdentity"`
+	DownloadURL     string `json:"downloadUrl,omitempty"`
+	PackageURL      string `json:"packageUrl,omitempty"`
+	MSIXURL         string `json:"msixUrl,omitempty"`
+	URL             string `json:"url,omitempty"`
+	AppInstallerURL string `json:"appInstallerUrl,omitempty"`
 }
 
 type mirrorRelease struct {
@@ -105,50 +104,9 @@ type mirrorRelease struct {
 type mirrorAsset struct {
 	Name               string `json:"name"`
 	BrowserDownloadURL string `json:"browser_download_url"`
-	Size               int64  `json:"size"`
-}
-
-type mirrorManifest struct {
-	Sources struct {
-		Windows struct {
-			ProductID         string `json:"productId"`
-			Architecture      string `json:"architecture"`
-			Version           string `json:"version"`
-			PackageMoniker    string `json:"packageMoniker"`
-			UpdateManifestURL string `json:"updateManifestUrl"`
-			UpdateManifest    struct {
-				BuildVersion    string `json:"buildVersion"`
-				StoreProductID  string `json:"storeProductId"`
-				PackageIdentity string `json:"packageIdentity"`
-			} `json:"updateManifest"`
-		} `json:"windows"`
-	} `json:"sources"`
-}
-
-type latestState struct {
-	SchemaVersion int       `json:"schemaVersion"`
-	UpdatedAt     string    `json:"updatedAt"`
-	Package       statePack `json:"package"`
-	Source        any       `json:"source,omitempty"`
-	Release       stateRel  `json:"release,omitempty"`
-}
-
-type statePack struct {
-	Name              string `json:"name"`
-	Version           string `json:"version"`
-	PackageMoniker    string `json:"packageMoniker"`
-	PackageFamilyName string `json:"packageFamilyName,omitempty"`
-	Publisher         string `json:"publisher"`
-	SHA256            string `json:"sha256"`
-	Size              int64  `json:"size"`
-	FileName          string `json:"fileName,omitempty"`
-	SourceKind        string `json:"sourceKind,omitempty"`
-}
-
-type stateRel struct {
-	Tag string `json:"tag"`
-	ID  string `json:"id"`
-	URL string `json:"url"`
+	Digest             string `json:"digest,omitempty"`
+	Size               int64  `json:"size,omitempty"`
+	ContentType        string `json:"content_type,omitempty"`
 }
 
 type appxManifest struct {
@@ -160,505 +118,481 @@ type appxManifest struct {
 	} `xml:"Identity"`
 }
 
-func NewApp() *App {
-	return &App{client: &http.Client{Timeout: 120 * time.Second}}
+// LoadState returns the cached local state if it exists.
+func LoadState() (StoredState, error) {
+	var state StoredState
+	body, err := os.ReadFile(statePath)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return StoredState{}, nil
+		}
+		return StoredState{}, err
+	}
+	if err := json.Unmarshal(body, &state); err != nil {
+		return StoredState{}, err
+	}
+	return state, nil
 }
 
-func (a *App) startup(ctx context.Context) {
-	a.ctx = ctx
+func SaveState(state StoredState) error {
+	if err := os.MkdirAll(filepath.Dir(statePath), 0o755); err != nil {
+		return err
+	}
+	body, err := json.MarshalIndent(state, "", "  ")
+	if err != nil {
+		return err
+	}
+	body = append(body, '\n')
+	return os.WriteFile(statePath, body, 0o644)
 }
 
-func (a *App) GetStatus() (AppStatus, error) {
-	wd, _ := os.Getwd()
-	state, _ := readState()
-
-	return AppStatus{
-		StateVersion:  state.Package.Version,
-		StateHash:     state.Package.SHA256,
-		WorkingFolder: wd,
-	}, nil
-}
-
-func (a *App) ProbeLatest() (ProbeResult, error) {
-	a.log("Checking OpenAI Windows update manifest")
-	source, err := a.resolveLatest()
+func ProbeLatest() (ProbeResult, error) {
+	state, err := LoadState()
 	if err != nil {
 		return ProbeResult{}, err
 	}
-	state, _ := readState()
-	wouldUpdate := state.Package.Version != source.PackageVersion || !strings.EqualFold(state.Package.SHA256, source.ExpectedSHA256)
-	if source.ExpectedSHA256 == "" {
-		wouldUpdate = state.Package.Version != source.PackageVersion
+	source, err := resolveLatestSource()
+	if err != nil {
+		return ProbeResult{}, err
 	}
+
+	wouldUpdate := !strings.EqualFold(state.Package.Version, source.Version)
+	if source.ExpectedSHA256 != "" && strings.EqualFold(state.Package.Version, source.Version) {
+		wouldUpdate = !sameHash(state.Package.SHA256, source.ExpectedSHA256)
+	}
+
+	destination, err := defaultDownloadPath(source.AssetName)
+	if err != nil {
+		return ProbeResult{}, err
+	}
+
 	return ProbeResult{
-		SourceKind:            source.SourceKind,
-		UpdateManifestVersion: source.UpdateManifestVersion,
-		PackageVersion:        source.PackageVersion,
-		PackageMoniker:        source.PackageMoniker,
-		DownloadURL:           source.DownloadURL,
-		ExpectedSHA256:        source.ExpectedSHA256,
-		MirrorReleaseTag:      source.MirrorReleaseTag,
-		MirrorReleaseURL:      source.MirrorReleaseURL,
-		DirectStoreStatus:     source.DirectStoreStatus,
-		WouldUpdate:           wouldUpdate,
-		CurrentStateVersion:   state.Package.Version,
-		CurrentStateSHA256:    state.Package.SHA256,
+		State:              state,
+		Source:             source,
+		DefaultDestination: destination,
+		WouldUpdate:        wouldUpdate,
 	}, nil
 }
 
-func (a *App) ChooseLocalMSIX() (PackageInfo, error) {
-	path, err := runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
-		Title: "Choose Codex MSIX",
-		Filters: []runtime.FileFilter{
-			{DisplayName: "MSIX packages", Pattern: "*.msix;*.appx"},
-		},
-	})
+func DownloadLatest(target string) (DownloadResult, error) {
+	source, err := resolveLatestSource()
 	if err != nil {
-		return PackageInfo{}, err
+		return DownloadResult{}, err
 	}
-	if path == "" {
-		return PackageInfo{}, nil
-	}
-	return inspectMSIX(path, "")
-}
 
-func (a *App) DryRunLocal(path string) (DownloadResult, error) {
-	info, err := inspectMSIX(path, "")
+	destination, err := resolveTargetPath(target, source.AssetName)
 	if err != nil {
 		return DownloadResult{}, err
 	}
-	state, _ := readState()
-	mode := "Would download"
-	msg := "Package is different from data/latest.json."
-	if state.Package.Version == info.Version && strings.EqualFold(state.Package.SHA256, info.SHA256) {
-		mode = "No update"
-		msg = "Package matches data/latest.json."
-	}
-	return DownloadResult{Mode: mode, Version: info.Version, SHA256: info.SHA256, Message: msg}, nil
-}
 
-func (a *App) DownloadLatest() (DownloadResult, error) {
-	source, err := a.resolveLatest()
+	pkg, err := downloadAndInspect(source, destination)
 	if err != nil {
 		return DownloadResult{}, err
 	}
-	defaultName := source.PackageMoniker + ".Msix"
-	path, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
-		Title:           "Save Codex MSIX",
-		DefaultFilename: defaultName,
-		Filters: []runtime.FileFilter{
-			{DisplayName: "MSIX packages", Pattern: "*.msix;*.appx"},
-		},
-	})
-	if err != nil {
-		return DownloadResult{}, err
-	}
-	if path == "" {
-		return DownloadResult{Mode: "Cancelled", Version: source.PackageVersion, SHA256: source.ExpectedSHA256, Message: "Download cancelled."}, nil
-	}
-	a.log("Downloading " + source.PackageMoniker)
-	if err := a.downloadFile(source.DownloadURL, path); err != nil {
-		return DownloadResult{}, err
-	}
-	info, err := inspectMSIX(path, source.PackageVersion)
-	if err != nil {
-		return DownloadResult{}, err
-	}
-	if source.ExpectedSHA256 != "" && !strings.EqualFold(info.SHA256, source.ExpectedSHA256) {
-		return DownloadResult{}, fmt.Errorf("downloaded package hash mismatch: expected %s, got %s", source.ExpectedSHA256, info.SHA256)
-	}
-	if err := writeJSON(statePath, latestState{
+
+	state := StoredState{
 		SchemaVersion: 1,
 		UpdatedAt:     time.Now().UTC().Format(time.RFC3339),
-		Package: statePack{
-			Name:              info.Name,
-			Version:           info.Version,
-			PackageMoniker:    source.PackageMoniker,
-			PackageFamilyName: info.PackageFamilyName,
-			Publisher:         info.Publisher,
-			SHA256:            info.SHA256,
-			Size:              info.Size,
-			FileName:          info.FileName,
-			SourceKind:        source.SourceKind,
-		},
-		Source: source,
-	}); err != nil {
+		Package:       pkg,
+		Source:        source,
+	}
+	if err := SaveState(state); err != nil {
 		return DownloadResult{}, err
 	}
-	a.log("Saved to " + path)
-	return DownloadResult{Mode: "Downloaded", Version: info.Version, SHA256: info.SHA256, Path: path, Message: "Saved to selected location."}, nil
+
+	return DownloadResult{
+		Package:     pkg,
+		Source:      source,
+		Destination: destination,
+	}, nil
 }
 
-type resolvedSource struct {
-	SourceKind            string `json:"sourceKind"`
-	UpdateManifestVersion string `json:"updateManifestVersion,omitempty"`
-	PackageVersion        string `json:"packageVersion"`
-	PackageMoniker        string `json:"packageMoniker"`
-	DownloadURL           string `json:"downloadUrl"`
-	ExpectedSHA256        string `json:"expectedSha256,omitempty"`
-	MirrorReleaseTag      string `json:"mirrorReleaseTag,omitempty"`
-	MirrorReleaseURL      string `json:"mirrorReleaseUrl,omitempty"`
-	DirectStoreStatus     string `json:"directStoreStatus,omitempty"`
-}
-
-func (a *App) resolveLatest() (resolvedSource, error) {
-	var manifest updateManifest
-	if err := a.getJSON(defaultUpdateManifestURL, &manifest); err != nil {
-		return resolvedSource{}, fmt.Errorf("update manifest failed: %w", err)
-	}
-	if manifest.PackageIdentity != "" && manifest.PackageIdentity != packageIdentity {
-		return resolvedSource{}, fmt.Errorf("unexpected package identity %q", manifest.PackageIdentity)
-	}
-
-	source, err := a.resolveMirror(manifest.BuildVersion)
+func InspectLocal(path string) (InspectResult, error) {
+	pkg, err := inspectMSIX(path, "")
 	if err != nil {
-		return resolvedSource{}, err
+		return InspectResult{}, err
 	}
-	source.DirectStoreStatus = "Microsoft Store direct resolver is not embedded in this GUI yet; using validated mirror release source."
-	if manifest.BuildVersion != "" && source.UpdateManifestVersion == "" {
-		source.UpdateManifestVersion = manifest.BuildVersion
+	state, err := LoadState()
+	if err != nil {
+		return InspectResult{}, err
 	}
-	if manifest.BuildVersion != "" && source.PackageVersion != manifest.BuildVersion {
-		a.log(fmt.Sprintf("Official manifest advertises %s; mirror currently serves %s", manifest.BuildVersion, source.PackageVersion))
-	}
-	return source, nil
+
+	matches := state.Package.Version != "" &&
+		strings.EqualFold(state.Package.Version, pkg.Version) &&
+		sameHash(state.Package.SHA256, pkg.SHA256)
+
+	return InspectResult{
+		Package:      pkg,
+		MatchesState: matches,
+	}, nil
 }
 
-func (a *App) resolveMirror(officialVersion string) (resolvedSource, error) {
-	var release mirrorRelease
-	if err := a.getJSON(mirrorLatestAPI, &release); err != nil {
-		return resolvedSource{}, fmt.Errorf("mirror release lookup failed: %w", err)
+func resolveLatestSource() (ResolvedSource, error) {
+	manifest, err := fetchOfficialManifest()
+	if err != nil {
+		return ResolvedSource{}, err
 	}
-	manifestAsset := findAsset(release.Assets, "release-manifest.json")
-	checksumAsset := findAsset(release.Assets, "SHA256SUMS-windows.txt")
-	msixAsset := findMSIXAsset(release.Assets)
-	if manifestAsset == nil || msixAsset == nil {
-		return resolvedSource{}, errors.New("mirror release is missing the Windows manifest or MSIX asset")
+	if manifest.PackageIdentity != "" && !strings.EqualFold(manifest.PackageIdentity, packageName) {
+		return ResolvedSource{}, fmt.Errorf("unexpected package identity %q", manifest.PackageIdentity)
 	}
 
-	var mm mirrorManifest
-	if err := a.getJSON(manifestAsset.BrowserDownloadURL, &mm); err != nil {
-		return resolvedSource{}, fmt.Errorf("mirror manifest failed: %w", err)
+	version := strings.TrimSpace(manifest.BuildVersion)
+	packageIdentity := strings.TrimSpace(manifest.PackageIdentity)
+	storeProductID := strings.TrimSpace(manifest.StoreProductID)
+
+	if direct := directPackageURLFromManifest(manifest); direct != "" {
+		name := filepath.Base(direct)
+		if version == "" {
+			version = versionFromAssetName(name)
+		}
+		if version == "" {
+			return ResolvedSource{}, fmt.Errorf("official manifest points to %q but the version could not be determined", direct)
+		}
+		return ResolvedSource{
+			SourceKind:      "OfficialManifest",
+			Version:         version,
+			PackageIdentity: packageIdentity,
+			StoreProductID:  storeProductID,
+			AssetName:       name,
+			DownloadURL:     direct,
+		}, nil
 	}
-	expectedHash := ""
-	if checksumAsset != nil {
-		body, err := a.getText(checksumAsset.BrowserDownloadURL)
-		if err == nil {
-			expectedHash = parseChecksum(body, msixAsset.Name)
+
+	release, err := fetchMirrorRelease()
+	if err != nil {
+		return ResolvedSource{}, err
+	}
+
+	asset, err := findMirrorAsset(release.Assets, version)
+	if err != nil {
+		return ResolvedSource{}, err
+	}
+	if version == "" {
+		version = versionFromAssetName(asset.Name)
+	}
+	if version == "" {
+		return ResolvedSource{}, fmt.Errorf("unable to infer Codex version from %q", asset.Name)
+	}
+
+	checksumURL, checksum := findWindowsChecksum(release.Assets, asset.Name)
+	if checksum == "" {
+		checksum = parseDigest(asset.Digest)
+	}
+
+	return ResolvedSource{
+		SourceKind:       "MirrorRelease",
+		Version:          version,
+		PackageIdentity:  packageIdentity,
+		StoreProductID:   storeProductID,
+		AssetName:        asset.Name,
+		Size:             asset.Size,
+		DownloadURL:      asset.BrowserDownloadURL,
+		ChecksumURL:      checksumURL,
+		ExpectedSHA256:   checksum,
+		AssetDigest:      parseDigest(asset.Digest),
+		MirrorReleaseTag: release.TagName,
+		MirrorReleaseURL: release.HTMLURL,
+	}, nil
+}
+
+func fetchOfficialManifest() (officialManifest, error) {
+	var manifest officialManifest
+	if err := fetchJSON(officialFeedURL, &manifest); err != nil {
+		return officialManifest{}, fmt.Errorf("official manifest fetch failed: %w", err)
+	}
+	return manifest, nil
+}
+
+func fetchMirrorRelease() (mirrorRelease, error) {
+	var release mirrorRelease
+	if err := fetchJSON(mirrorLatestURL, &release); err != nil {
+		return mirrorRelease{}, fmt.Errorf("mirror release fetch failed: %w", err)
+	}
+	return release, nil
+}
+
+func directPackageURLFromManifest(manifest officialManifest) string {
+	for _, candidate := range []string{
+		manifest.DownloadURL,
+		manifest.PackageURL,
+		manifest.MSIXURL,
+		manifest.URL,
+	} {
+		if looksLikePackageURL(candidate) {
+			return candidate
 		}
 	}
-	version := mm.Sources.Windows.Version
+	return ""
+}
+
+func looksLikePackageURL(candidate string) bool {
+	lower := strings.ToLower(strings.TrimSpace(candidate))
+	switch {
+	case strings.HasSuffix(lower, ".msix"):
+		return true
+	case strings.HasSuffix(lower, ".appx"):
+		return true
+	case strings.HasSuffix(lower, ".msixbundle"):
+		return true
+	case strings.HasSuffix(lower, ".appxbundle"):
+		return true
+	default:
+		return false
+	}
+}
+
+func findMirrorAsset(assets []mirrorAsset, version string) (mirrorAsset, error) {
+	if version != "" {
+		want := packageAssetName(version)
+		for _, asset := range assets {
+			if strings.EqualFold(asset.Name, want) {
+				return asset, nil
+			}
+		}
+	}
+
+	for _, asset := range assets {
+		if versionFromAssetName(asset.Name) != "" && strings.EqualFold(filepath.Ext(asset.Name), packageExtension) {
+			return asset, nil
+		}
+	}
+
+	want := packageAssetName(version)
 	if version == "" {
-		version = versionFromMoniker(mm.Sources.Windows.PackageMoniker)
+		want = packageName + "_" + packageArchitecture + "__" + packageFamilySuffix + packageExtension
 	}
-	advertised := mm.Sources.Windows.UpdateManifest.BuildVersion
-	if advertised == "" {
-		advertised = officialVersion
-	}
-	return resolvedSource{
-		SourceKind:            "MirrorRelease",
-		UpdateManifestVersion: advertised,
-		PackageVersion:        version,
-		PackageMoniker:        strings.TrimSuffix(msixAsset.Name, filepath.Ext(msixAsset.Name)),
-		DownloadURL:           msixAsset.BrowserDownloadURL,
-		ExpectedSHA256:        expectedHash,
-		MirrorReleaseTag:      release.TagName,
-		MirrorReleaseURL:      release.HTMLURL,
-	}, nil
+	return mirrorAsset{}, fmt.Errorf("mirror release is missing the Windows MSIX asset %q", want)
 }
 
-func (a *App) publishPackage(info PackageInfo, source resolvedSource, force bool) (PublishResult, error) {
-	if !commandExists("gh") {
-		return PublishResult{}, errors.New("GitHub CLI is not installed or not in PATH")
+func findWindowsChecksum(assets []mirrorAsset, fileName string) (string, string) {
+	for _, asset := range assets {
+		if strings.EqualFold(asset.Name, "SHA256SUMS-windows.txt") {
+			body, err := fetchText(asset.BrowserDownloadURL)
+			if err != nil {
+				return asset.BrowserDownloadURL, ""
+			}
+			if hash := parseChecksum(body, fileName); hash != "" {
+				return asset.BrowserDownloadURL, hash
+			}
+			return asset.BrowserDownloadURL, ""
+		}
 	}
-	if !ghAuthed() {
-		return PublishResult{}, errors.New("GitHub CLI is not authenticated; run gh auth login first")
-	}
-	repo, _ := repoInfo()
-	if repo == "" {
-		return PublishResult{}, errors.New("could not determine GitHub repository")
-	}
-	commit, err := gitOutput("rev-parse", "HEAD")
-	if err != nil {
-		return PublishResult{}, err
-	}
-
-	tmp, err := os.MkdirTemp("", "codex-release-*")
-	if err != nil {
-		return PublishResult{}, err
-	}
-	defer os.RemoveAll(tmp)
-
-	tag := releaseTag(info.Version, info.SHA256, force)
-	packageAsset := filepath.Join(tmp, info.FileName)
-	if err := copyFile(info.Path, packageAsset); err != nil {
-		return PublishResult{}, err
-	}
-	shaPath := filepath.Join(tmp, "SHA256SUMS.txt")
-	if err := os.WriteFile(shaPath, []byte(fmt.Sprintf("%s  %s\r\n", info.SHA256, info.FileName)), 0644); err != nil {
-		return PublishResult{}, err
-	}
-	manifestPath := filepath.Join(tmp, "release.json")
-	if err := writeJSON(manifestPath, releaseManifest(info, source, tag, "", "")); err != nil {
-		return PublishResult{}, err
-	}
-	notesPath := filepath.Join(tmp, "release-notes.md")
-	if err := os.WriteFile(notesPath, []byte(releaseNotes(info, source)), 0644); err != nil {
-		return PublishResult{}, err
-	}
-
-	a.log("Creating GitHub release " + tag)
-	args := []string{"release", "create", tag, "--repo", repo, "--target", strings.TrimSpace(commit), "--title", "Codex MSIX " + info.Version, "--notes-file", notesPath, packageAsset, shaPath, manifestPath}
-	if out, err := runCommand("gh", args...); err != nil {
-		return PublishResult{}, fmt.Errorf("gh release create failed: %w\n%s", err, out)
-	}
-	view, err := runCommand("gh", "release", "view", tag, "--repo", repo, "--json", "id,url")
-	if err != nil {
-		return PublishResult{}, fmt.Errorf("release was created, but gh release view failed: %w", err)
-	}
-	var release struct {
-		ID  json.Number `json:"id"`
-		URL string      `json:"url"`
-	}
-	_ = json.Unmarshal([]byte(view), &release)
-
-	state := latestState{
-		SchemaVersion: 1,
-		UpdatedAt:     time.Now().UTC().Format(time.RFC3339),
-		Package: statePack{
-			Name:              info.Name,
-			Version:           info.Version,
-			PackageMoniker:    info.PackageMoniker,
-			PackageFamilyName: info.PackageFamilyName,
-			Publisher:         info.Publisher,
-			SHA256:            info.SHA256,
-			Size:              info.Size,
-			FileName:          info.FileName,
-			SourceKind:        source.SourceKind,
-		},
-		Source: source,
-		Release: stateRel{
-			Tag: tag,
-			ID:  release.ID.String(),
-			URL: release.URL,
-		},
-	}
-	if err := writeJSON(statePath, state); err != nil {
-		return PublishResult{}, err
-	}
-	_, _ = runCommand("git", "add", statePath)
-	_, _ = runCommand("git", "commit", "-m", "Update mirrored Codex package state")
-	_, _ = runCommand("git", "push")
-
-	return PublishResult{Mode: "Published", Version: info.Version, SHA256: info.SHA256, ReleaseTag: tag, ReleaseURL: release.URL, Message: "Release created and local state updated."}, nil
+	return "", ""
 }
 
-func inspectMSIX(path string, expectedVersion string) (PackageInfo, error) {
+func downloadAndInspect(source ResolvedSource, destination string) (PackageDetails, error) {
+	if err := os.MkdirAll(filepath.Dir(destination), 0o755); err != nil {
+		return PackageDetails{}, err
+	}
+
+	tempDir, err := os.MkdirTemp("", "codex-unpacker-*")
+	if err != nil {
+		return PackageDetails{}, err
+	}
+	defer os.RemoveAll(tempDir)
+
+	tempPath := filepath.Join(tempDir, filepath.Base(destination))
+	if err := downloadFile(source.DownloadURL, tempPath); err != nil {
+		return PackageDetails{}, err
+	}
+
+	pkg, err := inspectMSIX(tempPath, source.Version)
+	if err != nil {
+		return PackageDetails{}, err
+	}
+
+	expectedHash := source.ExpectedSHA256
+	if expectedHash == "" {
+		expectedHash = parseDigest(source.AssetDigest)
+	}
+	if expectedHash != "" && !sameHash(pkg.SHA256, expectedHash) {
+		return PackageDetails{}, fmt.Errorf("downloaded package hash mismatch: expected %s, got %s", expectedHash, pkg.SHA256)
+	}
+
+	if err := copyFile(tempPath, destination); err != nil {
+		return PackageDetails{}, err
+	}
+	pkg.Path = destination
+	pkg.FileName = filepath.Base(destination)
+	return pkg, nil
+}
+
+func inspectMSIX(path string, expectedVersion string) (PackageDetails, error) {
 	abs, err := filepath.Abs(path)
 	if err != nil {
-		return PackageInfo{}, err
+		return PackageDetails{}, err
 	}
-	zr, err := zip.OpenReader(abs)
+
+	reader, err := zip.OpenReader(abs)
 	if err != nil {
-		return PackageInfo{}, err
+		return PackageDetails{}, err
 	}
-	defer zr.Close()
+	defer reader.Close()
 
 	required := map[string]bool{
-		"AppxManifest.xml":                false,
-		"AppxBlockMap.xml":                false,
-		"AppxSignature.p7x":               false,
-		"AppxMetadata/CodeIntegrity.cat":  false,
-		"AppxMetadata\\CodeIntegrity.cat": false,
+		"AppxManifest.xml":               false,
+		"AppxBlockMap.xml":               false,
+		"AppxSignature.p7x":              false,
+		"AppxMetadata/CodeIntegrity.cat": false,
 	}
+
 	var manifestBytes []byte
-	for _, f := range zr.File {
-		name := strings.ReplaceAll(f.Name, "\\", "/")
+	for _, file := range reader.File {
+		name := strings.ReplaceAll(file.Name, "\\", "/")
 		if _, ok := required[name]; ok {
 			required[name] = true
 		}
 		if name == "AppxManifest.xml" {
-			rc, err := f.Open()
+			rc, err := file.Open()
 			if err != nil {
-				return PackageInfo{}, err
+				return PackageDetails{}, err
 			}
 			manifestBytes, err = io.ReadAll(rc)
 			_ = rc.Close()
 			if err != nil {
-				return PackageInfo{}, err
+				return PackageDetails{}, err
 			}
 		}
 	}
+
 	for name, seen := range required {
-		if strings.Contains(name, "\\") {
-			continue
-		}
 		if !seen {
-			return PackageInfo{}, fmt.Errorf("MSIX is missing %s", name)
+			return PackageDetails{}, fmt.Errorf("MSIX is missing %s", name)
 		}
 	}
+	if len(manifestBytes) == 0 {
+		return PackageDetails{}, errors.New("MSIX is missing AppxManifest.xml")
+	}
+
 	var manifest appxManifest
 	if err := xml.Unmarshal(manifestBytes, &manifest); err != nil {
-		return PackageInfo{}, err
+		return PackageDetails{}, err
 	}
-	if manifest.Identity.Name != packageIdentity {
-		return PackageInfo{}, fmt.Errorf("unexpected package identity %s", manifest.Identity.Name)
+	if !strings.EqualFold(manifest.Identity.Name, packageName) {
+		return PackageDetails{}, fmt.Errorf("unexpected package identity %s", manifest.Identity.Name)
 	}
-	if manifest.Identity.ProcessorArchitecture != "" && !strings.EqualFold(manifest.Identity.ProcessorArchitecture, architecture) {
-		return PackageInfo{}, fmt.Errorf("unexpected architecture %s", manifest.Identity.ProcessorArchitecture)
+	if manifest.Identity.ProcessorArchitecture != "" && !strings.EqualFold(manifest.Identity.ProcessorArchitecture, packageArchitecture) {
+		return PackageDetails{}, fmt.Errorf("unexpected architecture %s", manifest.Identity.ProcessorArchitecture)
 	}
 	if expectedVersion != "" && manifest.Identity.Version != expectedVersion {
-		return PackageInfo{}, fmt.Errorf("expected version %s, got %s", expectedVersion, manifest.Identity.Version)
+		return PackageDetails{}, fmt.Errorf("expected version %s, got %s", expectedVersion, manifest.Identity.Version)
 	}
-	hash, size, err := hashFile(abs)
+
+	sum, size, err := hashFile(abs)
 	if err != nil {
-		return PackageInfo{}, err
+		return PackageDetails{}, err
 	}
+
 	fileName := filepath.Base(abs)
 	moniker := strings.TrimSuffix(fileName, filepath.Ext(fileName))
-	if versionFromMoniker(moniker) != "" && versionFromMoniker(moniker) != manifest.Identity.Version {
-		return PackageInfo{}, fmt.Errorf("filename version %s does not match manifest version %s", versionFromMoniker(moniker), manifest.Identity.Version)
+	if version := versionFromAssetName(fileName); version != "" && version != manifest.Identity.Version {
+		return PackageDetails{}, fmt.Errorf("filename version %s does not match manifest version %s", version, manifest.Identity.Version)
 	}
-	return PackageInfo{
+
+	return PackageDetails{
 		Name:              manifest.Identity.Name,
 		Version:           manifest.Identity.Version,
 		PackageMoniker:    moniker,
-		PackageFamilyName: manifest.Identity.Name + "_" + packageFamilySuffix,
+		PackageFamilyName: packageName + "_" + packageFamilySuffix,
 		Publisher:         manifest.Identity.Publisher,
 		Architecture:      manifest.Identity.ProcessorArchitecture,
-		SHA256:            hash,
+		SHA256:            sum,
 		Size:              size,
 		FileName:          fileName,
 		Path:              abs,
 	}, nil
 }
 
-func (a *App) getJSON(url string, out any) error {
-	body, err := a.getBytes(url)
+func defaultDownloadPath(fileName string) (string, error) {
+	downloads, err := downloadsDir()
 	if err != nil {
-		return err
+		return "", err
 	}
-	return json.Unmarshal(body, out)
+	return filepath.Join(downloads, resolvedFileName(fileName)), nil
 }
 
-func (a *App) getText(url string) (string, error) {
-	body, err := a.getBytes(url)
-	return string(body), err
+func downloadsDir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, "Downloads"), nil
 }
 
-func (a *App) getBytes(url string) ([]byte, error) {
-	req, err := http.NewRequest(http.MethodGet, url, nil)
-	if err != nil {
-		return nil, err
+func resolveTargetPath(target string, defaultName string) (string, error) {
+	if strings.TrimSpace(target) == "" {
+		return defaultDownloadPath(defaultName)
 	}
-	req.Header.Set("User-Agent", "codex-unpacker/1.0")
-	req.Header.Set("Accept", "application/vnd.github+json, application/json, */*")
-	resp, err := a.client.Do(req)
-	if err != nil {
-		return nil, err
+
+	cleaned := filepath.Clean(target)
+	if strings.HasSuffix(target, string(os.PathSeparator)) || strings.HasSuffix(target, "/") || strings.HasSuffix(target, `\`) {
+		return filepath.Join(cleaned, resolvedFileName(defaultName)), nil
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		b, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		return nil, fmt.Errorf("HTTP %d from %s: %s", resp.StatusCode, url, strings.TrimSpace(string(b)))
+	if info, err := os.Stat(cleaned); err == nil && info.IsDir() {
+		return filepath.Join(cleaned, resolvedFileName(defaultName)), nil
 	}
-	return io.ReadAll(resp.Body)
+	if filepath.Ext(filepath.Base(cleaned)) == "" {
+		return filepath.Join(cleaned, resolvedFileName(defaultName)), nil
+	}
+	return cleaned, nil
 }
 
-func (a *App) downloadFile(url, path string) error {
-	req, err := http.NewRequest(http.MethodGet, url, nil)
-	if err != nil {
-		return err
+func resolvedFileName(candidate string) string {
+	candidate = strings.TrimSpace(candidate)
+	if candidate == "" {
+		return packageAssetName("")
 	}
-	req.Header.Set("User-Agent", "codex-unpacker/1.0")
-	resp, err := a.client.Do(req)
-	if err != nil {
-		return err
+	if looksLikePackageURL(candidate) {
+		return filepath.Base(candidate)
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		b, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		return fmt.Errorf("HTTP %d from %s: %s", resp.StatusCode, url, strings.TrimSpace(string(b)))
+	if strings.HasSuffix(strings.ToLower(candidate), strings.ToLower(packageExtension)) {
+		return filepath.Base(candidate)
 	}
-	out, err := os.Create(path)
-	if err != nil {
-		return err
+	if version := versionFromAssetName(candidate); version != "" {
+		return candidate
 	}
-	defer out.Close()
-	_, err = io.Copy(out, resp.Body)
-	return err
+	if strings.Contains(candidate, "_") && strings.Contains(candidate, packageFamilySuffix) {
+		return candidate
+	}
+	return packageAssetName(candidate)
 }
 
-func (a *App) log(message string) {
-	if a.ctx != nil {
-		runtime.EventsEmit(a.ctx, "log", message)
+func packageAssetName(version string) string {
+	if version == "" {
+		return packageName + "_latest_" + packageArchitecture + "__" + packageFamilySuffix + packageExtension
 	}
+	return fmt.Sprintf("%s_%s_%s__%s%s", packageName, version, packageArchitecture, packageFamilySuffix, packageExtension)
 }
 
-func findAsset(assets []mirrorAsset, name string) *mirrorAsset {
-	for i := range assets {
-		if assets[i].Name == name {
-			return &assets[i]
-		}
+func versionFromAssetName(name string) string {
+	base := filepath.Base(name)
+	base = strings.TrimSuffix(base, filepath.Ext(base))
+	prefix := packageName + "_"
+	suffix := "_" + packageArchitecture + "__" + packageFamilySuffix
+	if !strings.HasPrefix(base, prefix) || !strings.HasSuffix(base, suffix) {
+		return ""
 	}
-	return nil
-}
-
-func findMSIXAsset(assets []mirrorAsset) *mirrorAsset {
-	re := regexp.MustCompile(`^OpenAI\.Codex_.+_x64__2p2nqsd0c76g0\.Msix$`)
-	var matches []mirrorAsset
-	for _, asset := range assets {
-		if re.MatchString(asset.Name) {
-			matches = append(matches, asset)
-		}
-	}
-	sort.Slice(matches, func(i, j int) bool {
-		left := versionFromMoniker(strings.TrimSuffix(matches[i].Name, filepath.Ext(matches[i].Name)))
-		right := versionFromMoniker(strings.TrimSuffix(matches[j].Name, filepath.Ext(matches[j].Name)))
-		return versionLess(right, left)
-	})
-	if len(matches) == 0 {
-		return nil
-	}
-	return &matches[0]
+	return strings.TrimSuffix(strings.TrimPrefix(base, prefix), suffix)
 }
 
 func parseChecksum(body, fileName string) string {
 	for _, line := range strings.Split(body, "\n") {
 		fields := strings.Fields(line)
-		if len(fields) >= 2 && strings.EqualFold(fields[1], fileName) && len(fields[0]) == 64 {
-			return strings.ToLower(fields[0])
+		if len(fields) < 2 {
+			continue
+		}
+		hash := strings.ToLower(strings.TrimSpace(fields[0]))
+		name := strings.TrimSpace(fields[len(fields)-1])
+		name = strings.TrimPrefix(name, "*")
+		if len(hash) == 64 && strings.EqualFold(name, fileName) {
+			return hash
 		}
 	}
 	return ""
 }
 
-func versionFromMoniker(moniker string) string {
-	parts := strings.Split(moniker, "_")
-	if len(parts) > 1 {
-		return parts[1]
-	}
-	return ""
-}
-
-func versionLess(a, b string) bool {
-	ap := parseVersion(a)
-	bp := parseVersion(b)
-	for i := 0; i < 4; i++ {
-		if ap[i] != bp[i] {
-			return ap[i] < bp[i]
-		}
-	}
-	return false
-}
-
-func parseVersion(v string) [4]int {
-	var out [4]int
-	parts := strings.Split(v, ".")
-	for i := 0; i < len(parts) && i < 4; i++ {
-		fmt.Sscanf(parts[i], "%d", &out[i])
-	}
-	return out
+func parseDigest(digest string) string {
+	return strings.TrimPrefix(strings.ToLower(strings.TrimSpace(digest)), "sha256:")
 }
 
 func hashFile(path string) (string, int64, error) {
@@ -667,76 +601,78 @@ func hashFile(path string) (string, int64, error) {
 		return "", 0, err
 	}
 	defer f.Close()
-	h := sha256.New()
-	size, err := io.Copy(h, f)
+
+	hash := sha256.New()
+	size, err := io.Copy(hash, f)
 	if err != nil {
 		return "", 0, err
 	}
-	return hex.EncodeToString(h.Sum(nil)), size, nil
+	return hex.EncodeToString(hash.Sum(nil)), size, nil
 }
 
-func readState() (latestState, error) {
-	var state latestState
-	b, err := os.ReadFile(statePath)
-	if err != nil {
-		return state, err
-	}
-	err = json.Unmarshal(b, &state)
-	return state, err
-}
-
-func writeJSON(path string, value any) error {
-	b, err := json.MarshalIndent(value, "", "  ")
+func fetchJSON(url string, out any) error {
+	body, err := fetchBytes(url)
 	if err != nil {
 		return err
 	}
-	b = append(b, '\n')
-	return os.WriteFile(path, b, 0644)
+	return json.Unmarshal(body, out)
 }
 
-func releaseTag(version, hash string, force bool) string {
-	tag := fmt.Sprintf("%s-%s-%s", releaseTagPrefix, version, strings.ToLower(hash[:12]))
-	if force {
-		tag += "-force-" + time.Now().UTC().Format("20060102150405")
+func fetchText(url string) (string, error) {
+	body, err := fetchBytes(url)
+	if err != nil {
+		return "", err
 	}
-	return tag
+	return string(body), nil
 }
 
-func releaseManifest(info PackageInfo, source resolvedSource, tag, id, url string) map[string]any {
-	return map[string]any{
-		"schemaVersion": 1,
-		"generatedAt":   time.Now().UTC().Format(time.RFC3339),
-		"release": map[string]string{
-			"tag": tag,
-			"id":  id,
-			"url": url,
-		},
-		"source": source,
-		"package": map[string]any{
-			"name":              info.Name,
-			"version":           info.Version,
-			"packageMoniker":    info.PackageMoniker,
-			"packageFamilyName": info.PackageFamilyName,
-			"publisher":         info.Publisher,
-			"architecture":      info.Architecture,
-			"sha256":            info.SHA256,
-			"size":              info.Size,
-			"fileName":          info.FileName,
-		},
+func fetchBytes(url string) ([]byte, error) {
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
 	}
+	req.Header.Set("User-Agent", appName+"/1.0")
+	req.Header.Set("Accept", "application/json, text/plain, */*")
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		snippet, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+		return nil, fmt.Errorf("HTTP %d from %s: %s", resp.StatusCode, url, strings.TrimSpace(string(snippet)))
+	}
+	return io.ReadAll(resp.Body)
 }
 
-func releaseNotes(info PackageInfo, source resolvedSource) string {
-	var b bytes.Buffer
-	fmt.Fprintf(&b, "Codex MSIX mirror update\n\n")
-	fmt.Fprintf(&b, "Version: %s\n", info.Version)
-	fmt.Fprintf(&b, "Package: %s\n", info.PackageMoniker)
-	fmt.Fprintf(&b, "SHA256: %s\n", info.SHA256)
-	fmt.Fprintf(&b, "Source: %s\n", source.DownloadURL)
-	fmt.Fprintf(&b, "Resolved via: %s\n", source.SourceKind)
-	fmt.Fprintf(&b, "Advertised build: %s\n", source.UpdateManifestVersion)
-	fmt.Fprintf(&b, "Timestamp: %s\n", time.Now().UTC().Format(time.RFC3339))
-	return b.String()
+func downloadFile(url, path string) error {
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("User-Agent", appName+"/1.0")
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		snippet, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+		return fmt.Errorf("HTTP %d from %s: %s", resp.StatusCode, url, strings.TrimSpace(string(snippet)))
+	}
+
+	out, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	_, err = io.Copy(out, resp.Body)
+	return err
 }
 
 func copyFile(src, dst string) error {
@@ -745,61 +681,24 @@ func copyFile(src, dst string) error {
 		return err
 	}
 	defer in.Close()
+
 	out, err := os.Create(dst)
 	if err != nil {
 		return err
 	}
 	defer out.Close()
+
 	if _, err := io.Copy(out, in); err != nil {
 		return err
 	}
 	return out.Close()
 }
 
-func commandExists(name string) bool {
-	_, err := exec.LookPath(name)
-	return err == nil
-}
-
-func ghAuthed() bool {
-	if !commandExists("gh") {
+func sameHash(a, b string) bool {
+	a = strings.TrimSpace(a)
+	b = strings.TrimSpace(b)
+	if a == "" || b == "" {
 		return false
 	}
-	cmd := exec.Command("gh", "auth", "status")
-	return cmd.Run() == nil
-}
-
-func repoInfo() (string, bool) {
-	if commandExists("gh") {
-		out, err := runCommand("gh", "repo", "view", "--json", "nameWithOwner,isPrivate")
-		if err == nil {
-			var repo struct {
-				NameWithOwner string `json:"nameWithOwner"`
-				IsPrivate     bool   `json:"isPrivate"`
-			}
-			if json.Unmarshal([]byte(out), &repo) == nil && repo.NameWithOwner != "" {
-				return repo.NameWithOwner, repo.IsPrivate
-			}
-		}
-	}
-	remote, err := gitOutput("remote", "get-url", "origin")
-	if err != nil {
-		return "", false
-	}
-	re := regexp.MustCompile(`github\.com[:/](.+?)(?:\.git)?\s*$`)
-	match := re.FindStringSubmatch(remote)
-	if len(match) == 2 {
-		return strings.TrimSuffix(match[1], ".git"), false
-	}
-	return "", false
-}
-
-func gitOutput(args ...string) (string, error) {
-	return runCommand("git", args...)
-}
-
-func runCommand(name string, args ...string) (string, error) {
-	cmd := exec.Command(name, args...)
-	out, err := cmd.CombinedOutput()
-	return string(out), err
+	return strings.EqualFold(a, b)
 }
