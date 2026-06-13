@@ -20,7 +20,7 @@ import (
 
 const (
 	appName             = "codex-unpacker"
-	appVersion          = "1.0.1"
+	appVersion          = "1.0.2"
 	packageName         = "OpenAI.Codex"
 	packageArchitecture = "x64"
 	packageFamilySuffix = "2p2nqsd0c76g0"

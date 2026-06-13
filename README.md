@@ -1,6 +1,10 @@
+<p align="center">
+  <img src="assets/logo.png" width="160" alt="codex-unpacker logo" />
+</p>
+
 <h1 align="center">codex-unpacker</h1>
 
-Terminal-first Go app for finding the latest Codex package and saving it to your Downloads folder by default.
+<p align="center">Terminal-first Go app for finding the latest Codex package and saving it to your Downloads folder by default.</p>
 
 It ships as a compact TUI for interactive use and a CLI for scripting. It supports the Windows MSIX path and the macOS DMG path, and it does not automate GitHub Releases.
 
@@ -47,4 +51,5 @@ That opens the TUI.
 - `download` saves to your Downloads folder if you do not pass an output path.
 - `inspect` validates an existing Codex package and prints its version and hash.
 - `data/latest.json` is local state only; it is not a release artifact, and it keeps Windows and macOS entries separate.
+- The README header and TUI banner both use the bundled logo in `assets/logo.png`.
 - This repository no longer contains Wails, Node, or GitHub release automation.
