@@ -330,9 +330,6 @@ func logPanel(width int, body string) string {
 	}
 
 	panelWidth := clamp(width-4, 52, 96)
-	if panelWidth < 52 {
-		panelWidth = 52
-	}
 
 	return panelStyle.Width(panelWidth).Render(
 		lipgloss.JoinVertical(lipgloss.Left,

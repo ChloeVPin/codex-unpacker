@@ -1,4 +1,6 @@
+codex-unpacker
 *.exe
+*.dmg
 *.msix
 *.appx
 *.msixbundle

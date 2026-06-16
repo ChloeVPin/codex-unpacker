@@ -29,6 +29,8 @@ func main() {
 	switch cfg.command {
 	case "help":
 		printUsage(os.Stdout)
+	case "version":
+		fmt.Fprintln(os.Stdout, appVersion)
 	case "probe":
 		runProbe(cfg)
 	case "download":
@@ -48,6 +50,8 @@ func parseArgs(args []string) (cliConfig, error) {
 	switch strings.ToLower(args[0]) {
 	case "help", "-h", "--help":
 		return cliConfig{command: "help"}, nil
+	case "version", "-v", "--version":
+		return cliConfig{command: "version"}, nil
 	case "probe":
 		return parseProbeCommand(args[1:])
 	case "download":
@@ -218,6 +222,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  codex-unpacker probe [--platform windows|macos] [--arch x64|arm64] [--json]")
 	fmt.Fprintln(w, "  codex-unpacker download [--platform windows|macos] [--arch x64|arm64] [--output <folder-or-file>] [--json]")
 	fmt.Fprintln(w, "  codex-unpacker inspect <path.msix|path.dmg> [--json]")
+	fmt.Fprintln(w, "  codex-unpacker version")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "The default download target is your current platform Downloads folder.")
 }

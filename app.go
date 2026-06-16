@@ -1231,7 +1231,8 @@ func copyFile(src, dst string) error {
 	if _, err := io.Copy(out, in); err != nil {
 		return err
 	}
-	return out.Close()
+	// Sync flushes OS write buffers; the deferred Close handles the fd cleanup.
+	return out.Sync()
 }
 
 func sameHash(a, b string) bool {
