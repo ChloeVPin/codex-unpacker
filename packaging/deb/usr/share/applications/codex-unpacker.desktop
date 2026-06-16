@@ -4,5 +4,6 @@ Name=Codex Unpacker
 Comment=Download and manage OpenAI Codex packages
 Exec=codex-unpacker
 Terminal=true
+Icon=codex-unpacker
 Categories=Utility;ConsoleOnly;
 Keywords=codex;openai;unpacker;package;

@@ -16,6 +16,8 @@ DEB_ROOT="${OUT_DIR}/deb-staging"
 rm -rf "${DEB_ROOT}"
 cp -a "${ROOT_DIR}/packaging/deb" "${DEB_ROOT}"
 install -m 0755 "${OUT_DIR}/codex-unpacker" "${DEB_ROOT}/usr/bin/codex-unpacker"
+install -m 0644 "${ROOT_DIR}/assets/logo.png" \
+    "${DEB_ROOT}/usr/share/icons/hicolor/512x512/apps/codex-unpacker.png"
 
 fakeroot dpkg-deb --build --root-owner-group "${DEB_ROOT}" "${OUT_DIR}/codex-unpacker_${VERSION}_${ARCH}.deb"
 echo "    -> $(ls -lh "${OUT_DIR}/codex-unpacker_${VERSION}_${ARCH}.deb")"
@@ -29,6 +31,8 @@ mkdir -p "${RPM_TOPDIR}"/{BUILD,RPMS,SOURCES,SPECS,SRPMS,BUILDROOT}
 install -m 0755 "${OUT_DIR}/codex-unpacker" "${RPM_TOPDIR}/SOURCES/codex-unpacker"
 install -m 0644 "${ROOT_DIR}/packaging/deb/usr/share/applications/codex-unpacker.desktop" \
     "${RPM_TOPDIR}/SOURCES/codex-unpacker.desktop"
+install -m 0644 "${ROOT_DIR}/assets/logo.png" \
+    "${RPM_TOPDIR}/SOURCES/codex-unpacker.png"
 
 rpmbuild --define "_topdir ${RPM_TOPDIR}" \
          --define "_bindir /usr/bin" \

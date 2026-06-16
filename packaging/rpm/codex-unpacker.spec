@@ -6,6 +6,7 @@ License:        MIT
 URL:            https://github.com/ChloeVPin/codex-unpacker
 Source0:        codex-unpacker
 Source1:        codex-unpacker.desktop
+Source2:        codex-unpacker.png
 
 %description
 Codex Unpacker provides a terminal UI for probing, downloading,
@@ -15,10 +16,12 @@ It verifies SHA-256 checksums and tracks installed versions.
 %install
 install -Dpm 0755 %{SOURCE0} %{buildroot}%{_bindir}/codex-unpacker
 install -Dpm 0644 %{SOURCE1} %{buildroot}%{_datadir}/applications/codex-unpacker.desktop
+install -Dpm 0644 %{SOURCE2} %{buildroot}%{_datadir}/icons/hicolor/512x512/apps/codex-unpacker.png
 
 %files
 %{_bindir}/codex-unpacker
 %{_datadir}/applications/codex-unpacker.desktop
+%{_datadir}/icons/hicolor/512x512/apps/codex-unpacker.png
 
 %changelog
 * Tue Jun 16 2026 ChloeVPin - 1.0.3-1

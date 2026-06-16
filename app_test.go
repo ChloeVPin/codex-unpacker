@@ -80,10 +80,13 @@ func TestResolveTargetSpecMacOSUnsupportedArch(t *testing.T) {
 	}
 }
 
-func TestResolveTargetSpecUnsupportedPlatform(t *testing.T) {
-	_, err := resolveTargetSpec("linux", "")
-	if err == nil {
-		t.Fatal("expected error for linux platform, got nil")
+func TestResolveTargetSpecLinuxMapsToMacOS(t *testing.T) {
+	target, err := resolveTargetSpec("linux", "")
+	if err != nil {
+		t.Fatalf("resolveTargetSpec returned error: %v", err)
+	}
+	if target.Platform != "macos" {
+		t.Fatalf("target.Platform = %q, want macos", target.Platform)
 	}
 }
 
@@ -135,8 +138,8 @@ func TestNormalizePlatform(t *testing.T) {
 		"macOS":   "macos",
 		"darwin":  "macos",
 		"mac":     "macos",
-		"linux":   "linux",
-		"LINUX":   "linux",
+		"linux":   "macos",
+		"LINUX":   "macos",
 		"":        "",
 	}
 	for input, want := range tests {

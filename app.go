@@ -252,7 +252,7 @@ func defaultTargetSpec() TargetSpec {
 	switch runtime.GOOS {
 	case "windows":
 		return TargetSpec{Platform: "windows", Architecture: "x64"}
-	case "darwin":
+	case "darwin", "linux":
 		return TargetSpec{Platform: "macos", Architecture: architectureFromGo(runtime.GOARCH)}
 	default:
 		return TargetSpec{Platform: strings.ToLower(runtime.GOOS), Architecture: architectureFromGo(runtime.GOARCH)}
@@ -1055,7 +1055,7 @@ func normalizePlatform(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case "windows", "win", "win32":
 		return "windows"
-	case "macos", "darwin", "mac":
+	case "macos", "darwin", "mac", "linux":
 		return "macos"
 	case "auto":
 		return defaultTargetSpec().Platform
