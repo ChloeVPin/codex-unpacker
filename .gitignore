@@ -1,4 +1,4 @@
-codex-unpacker
+/codex-unpacker
 *.exe
 *.dmg
 *.msix

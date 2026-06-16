@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Codex Unpacker
+Comment=Download and manage OpenAI Codex packages
+Exec=codex-unpacker
+Terminal=true
+Categories=Utility;ConsoleOnly;
+Keywords=codex;openai;unpacker;package;
