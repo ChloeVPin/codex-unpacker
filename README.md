@@ -3,7 +3,11 @@
 </p>
 
 <p align="center">
-  <a href="https://go.dev">
+  <img src="assets/logo.png" width="120" alt="codex-unpacker logo" />
+</p>
+
+<p align="center">
+  <a href="https://go.dev">>
     <img src="https://img.shields.io/badge/Go-1.22+-00ADD8" alt="Go version" />
   </a>
   <img src="https://img.shields.io/badge/TUI-Bubbletea-00D26A" alt="TUI Framework" />
